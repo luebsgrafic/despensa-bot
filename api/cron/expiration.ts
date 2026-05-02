@@ -7,7 +7,6 @@ import { config } from '../../src/utils/config';
 // Checks for expiring products and notifies all users
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Verify it's a Vercel Cron request
   if (req.headers['x-vercel-cron'] !== '1') {
     res.status(403).json({ error: 'Forbidden' });
     return;
