@@ -8,7 +8,8 @@ export function authMiddleware(): Middleware<Context> {
       return;
     }
 
-    if (!config.allowedUsers.includes(userId)) {
+    // If ALLOWED_USERS is empty, allow everyone
+    if (config.allowedUsers.length > 0 && !config.allowedUsers.includes(userId)) {
       ctx.reply(
         '⛔ Lo siento, no tienes permiso para usar este bot.\n' +
           'Si crees que es un error, contacta con el administrador.',
