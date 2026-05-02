@@ -20,10 +20,7 @@ export const config = {
   telegramBotToken: requireEnv('TELEGRAM_BOT_TOKEN'),
   deepseekApiKey: requireEnv('DEEPSEEK_API_KEY'),
   databaseUrl: requireEnv('DATABASE_URL'),
-  allowedUsers: (process.env.TELEGRAM_ALLOWED_USERS || '')
-    .split(',')
-    .map((id) => parseInt(id.trim(), 10))
-    .filter((id) => !isNaN(id)),
+  allowedUsers: [] as number[],
 
   deepseekModel: 'deepseek-v4-flash',
   deepseekBaseUrl: 'https://api.deepseek.com',
