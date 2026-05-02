@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import http from 'http';
 
 // Load .env FIRST, before any other imports
 const envPath = path.resolve(__dirname, '../.env');
@@ -12,6 +11,7 @@ if (fs.existsSync(envPath)) {
   console.warn('[Config] No .env file found at:', envPath);
 }
 
+import express from 'express';
 import { createBot } from './bot';
 import { startScheduler } from './services/scheduler';
 
@@ -53,48 +53,41 @@ async function setWebhookWithRetry(url: string, maxRetries = 5): Promise<void> {
 }
 
 async function main() {
-  // 1. Register webhook URL with Telegram (this is the ONLY setWebhook call)
+  // 1. Register webhook URL with Telegram (only setWebhook call)
   await setWebhookWithRetry(WEBHOOK_URL!);
 
-  // 2. Create the webhook callback handler WITHOUT calling setWebhook again
-  //    bot.createWebhook() returns a request handler, does NOT call setWebhook
-  const webhookHandler = await bot.createWebhook({
-    domain: 'localhost',
-    path: '/api/webhook',
+  // 2. Express server — NO bot.launch(), NO bot.createWebhook()
+  const app = express();
+
+  // Health check
+  app.get('/api/webhook', (_req, res) => {
+    res.json({ status: 'ok', bot: 'DespensaBot' });
   });
 
-  // 3. Create raw HTTP server (no express needed)
-  const server = http.createServer((req, res) => {
-    // Health check
-    if (req.method === 'GET' && req.url === '/api/webhook') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', bot: 'DespensaBot' }));
-      return;
+  // Webhook endpoint — raw body required by Telegraf
+  app.post('/api/webhook', express.text({ type: '*/*' }), async (req, res) => {
+    try {
+      const update = JSON.parse(req.body);
+      await bot.handleUpdate(update);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error('[Webhook] Error processing update:', error?.message);
+      res.json({ ok: true }); // Always 200 to Telegram
     }
-
-    // Webhook updates from Telegram
-    if (req.method === 'POST' && req.url === '/api/webhook') {
-      webhookHandler(req, res);
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
   });
 
-  // 4. Start listening
-  server.listen(PORT, () => {
+  // 3. Start listening
+  app.listen(PORT, () => {
     console.log(`🤖 DespensaBot is running (webhook mode on port ${PORT})!`);
     console.log(`🔗 Webhook URL: ${WEBHOOK_URL}`);
   });
 
-  // 5. Scheduler for daily alerts
+  // 4. Scheduler for daily alerts
   startScheduler(bot);
 
-  // 6. Graceful shutdown
+  // 5. Graceful shutdown
   const shutdown = () => {
     console.log('\n[Shutdown] Stopping bot...');
-    server.close();
     bot.stop();
     process.exit(0);
   };
