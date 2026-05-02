@@ -7,7 +7,7 @@
 - **Database**: Neon (PostgreSQL serverless) via `@neondatabase/serverless`
 - **AI**: DeepSeek Chat via OpenAI SDK (`openai` npm package, base URL `https://api.deepseek.com`)
 - **Scheduler**: node-cron (runs in-process, bot must stay running 24/7)
-- **Deploy**: Fly.io (Docker, worker process, 24/7)
+- **Deploy**: VPS (DigitalOcean, nginx reverse proxy, webhook mode)
 - **Testing**: Vitest
 
 ## Dev commands
@@ -68,7 +68,7 @@ tests/
 
 ## Key architecture decisions
 
-- **Long polling**: Bot uses long polling (not webhooks). Must stay running 24/7.
+- **Webhook mode**: Bot uses webhooks (not long polling). Nginx proxies `/api/webhook` to `localhost:3000`.
 - **Async DB**: All DB functions are async (Neon's `@neondatabase/serverless` returns promises).
 - **Wizard state**: Stored in Telegraf's in-memory session (`MemorySessionStore`). Wizard steps are tracked via `session.wizard.step` string enum.
 - **No Scenes**: Telegraf v4 scenes are deprecated. Wizard is implemented manually via session state + conditional routing in `bot.on('message')`.
@@ -77,18 +77,13 @@ tests/
 - **DeepSeek model**: `deepseek-v4-flash` (NOT `deepseek-chat`, which is deprecated as of 2026-07-24).
 - **Scheduler**: Runs in-process via node-cron. Bot must stay running 24/7 for alerts to work.
 
-## Fly.io deployment
+## VPS deployment (DigitalOcean + nginx)
 
-1. Install Fly CLI: `curl -fsSL https://fly.io/install.sh | sh`
-2. Login: `fly auth login`
-3. Launch: `fly launch` (uses existing fly.toml)
-4. Deploy: `fly deploy`
-5. Set secrets (not in fly.toml for security):
-   ```bash
-   fly secrets set TELEGRAM_BOT_TOKEN=...
-   fly secrets set DEEPSEEK_API_KEY=...
-   fly secrets set DATABASE_URL=...
-   ```
+1. Clone repo on VPS
+2. `npm install && npm run build`
+3. Set env vars in `.env` or systemd service
+4. Configure nginx to proxy `/api/webhook` to `localhost:3000`
+5. Run with systemd or pm2: `node dist/index.js`
 
 ## Testing quirks
 
