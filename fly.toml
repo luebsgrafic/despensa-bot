@@ -1,0 +1,20 @@
+app = "despensa-bot"
+
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Set secrets via `fly secrets set` — DO NOT hardcode tokens here
+  # fly secrets set TELEGRAM_BOT_TOKEN=<token>
+  # fly secrets set DEEPSEEK_API_KEY=<key>
+  # fly secrets set DATABASE_URL=<url>
+
+[processes]
+  app = "node dist/index.js"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
