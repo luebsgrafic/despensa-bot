@@ -28,7 +28,26 @@ if (!WEBHOOK_URL) {
 console.log('[Config] PORT:', PORT);
 console.log('[Config] WEBHOOK_URL:', WEBHOOK_URL);
 
-async function setWebhookWithRetry(url: string, maxRetries = 5): Promise<void> {
+/**
+ * Check if the webhook is already set to the correct URL.
+ * Only calls setWebhook if the current URL differs.
+ */
+async function ensureWebhook(url: string, maxRetries = 5): Promise<void> {
+  // 1. Check current webhook status
+  try {
+    const info = await bot.telegram.getWebhookInfo();
+    if (info.url === url) {
+      console.log(`[Webhook] Already set to: ${url} — skipping registration`);
+      return;
+    }
+    if (info.url) {
+      console.log(`[Webhook] Current URL differs: "${info.url}" -> "${url}"`);
+    }
+  } catch (error: any) {
+    console.warn('[Webhook] Could not get current webhook info:', error?.message);
+  }
+
+  // 2. Set webhook with retry on 429
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const result = await bot.telegram.setWebhook(url);
@@ -53,26 +72,35 @@ async function setWebhookWithRetry(url: string, maxRetries = 5): Promise<void> {
 }
 
 async function main() {
-  // 1. Register webhook URL with Telegram (only setWebhook call)
-  await setWebhookWithRetry(WEBHOOK_URL!);
+  // 1. Ensure webhook is registered (skips if already correct)
+  await ensureWebhook(WEBHOOK_URL!);
 
   // 2. Express server — NO bot.launch(), NO bot.createWebhook()
   const app = express();
 
-  // Health check
+  // Health check for nginx
   app.get('/api/webhook', (_req, res) => {
-    res.json({ status: 'ok', bot: 'DespensaBot' });
+    res.status(200).json({ status: 'ok', bot: 'DespensaBot' });
   });
 
-  // Webhook endpoint — raw body required by Telegraf
-  app.post('/api/webhook', express.text({ type: '*/*' }), async (req, res) => {
+  // Webhook endpoint — raw Buffer body, Telegraf handles parsing
+  app.post('/api/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     try {
-      const update = JSON.parse(req.body);
+      if (!req.body || Buffer.byteLength(req.body as any) === 0) {
+        console.warn('[Webhook] Empty body received');
+        res.status(200).json({ ok: true });
+        return;
+      }
+
+      const rawBody = (req.body as Buffer).toString('utf8');
+      const update = JSON.parse(rawBody);
+
       await bot.handleUpdate(update);
-      res.json({ ok: true });
+      res.status(200).json({ ok: true });
     } catch (error: any) {
       console.error('[Webhook] Error processing update:', error?.message);
-      res.json({ ok: true }); // Always 200 to Telegram
+      // Always return 200 to Telegram so it doesn't retry indefinitely
+      res.status(200).json({ ok: true });
     }
   });
 
