@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/webhook.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/webhook",
+      "dest": "/api/webhook.ts"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/expiration",
+      "schedule": "0 9 * * *"
+    }
+  ],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": "@telegram-bot-token",
+    "DEEPSEEK_API_KEY": "@deepseek-api-key",
+    "TELEGRAM_ALLOWED_USERS": "@telegram-allowed-users",
+    "DATABASE_URL": "@database-url"
+  }
+}
