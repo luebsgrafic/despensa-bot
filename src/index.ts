@@ -105,7 +105,7 @@ async function main() {
   });
 
   // 3. Start listening
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🤖 DespensaBot is running (webhook mode on port ${PORT})!`);
     console.log(`🔗 Webhook URL: ${WEBHOOK_URL}`);
   });
@@ -117,7 +117,11 @@ async function main() {
   const shutdown = () => {
     console.log('\n[Shutdown] Stopping bot...');
     bot.stop();
-    process.exit(0);
+    server.close(() => {
+      process.exit(0);
+    });
+    // Force exit if graceful close takes too long
+    setTimeout(() => process.exit(0), 5000).unref();
   };
 
   process.once('SIGINT', shutdown);
