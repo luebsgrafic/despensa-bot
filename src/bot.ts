@@ -7,7 +7,7 @@ import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handl
 import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelection, handleNoExpiry, handleNoMinStock, handleSave, handleCancel } from './handlers/add';
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
-import { askDeepSeek } from './services/deepseek';
+import { processWithAI } from './services/deepseek';
 
 // Extend Context type to include session
 export interface BotContext extends Context {
@@ -23,6 +23,9 @@ export function createBot(): Telegraf<BotContext> {
 
   // ── Commands ───────────────────────────────────────────
   bot.start(startHandler);
+  bot.command('lista', async (ctx) => {
+    await showShoppingList(ctx);
+  });
 
   // ── Keyboard handlers ──────────────────────────────────
   bot.hears('📦 Ver despensa', showPantry);
@@ -111,11 +114,11 @@ export function createBot(): Telegraf<BotContext> {
   // ── AI fallback ────────────────────────────────────────
   bot.on(message('text'), async (ctx) => {
     const text = ctx.message.text;
-    if (!text || text.length < 3) return;
+    if (!text || text.length < 2) return;
 
     try {
       await ctx.sendChatAction('typing');
-      const response = await askDeepSeek(text);
+      const response = await processWithAI(text, ctx.from!.id);
       await ctx.reply(response, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('DeepSeek error:', error);
