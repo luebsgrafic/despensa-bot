@@ -72,12 +72,12 @@ async function showConsumeProduct(ctx: Context, product: Product): Promise<void>
     ? ` (caduca: ${formatDate(product.expiration_date)})`
     : '';
 
-  await ctx.editMessageText(
-    `📦 *${product.name}*\n` +
-      `Cantidad actual: *${product.quantity}${product.unit}*${expiryText}\n\n` +
-      '¿Cuánto gastaste? (escribe el número)',
-    { parse_mode: 'Markdown', reply_markup: { force_reply: true } },
-  );
+    await ctx.reply(
+      `📦 *${product.name}*\n` +
+        `Cantidad actual: *${product.quantity}${product.unit}*${expiryText}\n\n` +
+        '¿Cuánto gastaste? (escribe el número)',
+      { parse_mode: 'Markdown' },
+    );
 
   consumeState.set(ctx.chat!.id, {
     productId: product.id,

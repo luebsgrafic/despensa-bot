@@ -21,7 +21,7 @@ export function startHandler(ctx: Context): void {
         [{ text: '🛒 Lista compra' }, { text: '🍳 ¿Qué como?' }],
       ],
       resize_keyboard: true,
-      persistent: true,
+      is_persistent: true,
     },
   });
 }

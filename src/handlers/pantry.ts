@@ -12,8 +12,7 @@ interface PantryState {
 // In-memory pagination state per chat
 const pantryState = new Map<number, PantryState>();
 
-export function showPantry(ctx: Context): void {
-  // Show zone selection first
+export async function showPantry(ctx: Context): Promise<void> {
   const buttons = STORAGE_ZONES.map((zone) => [
     Markup.button.callback(
       `${ZONE_EMOJIS[zone]} ${capitalize(zone)}`,
@@ -23,19 +22,19 @@ export function showPantry(ctx: Context): void {
 
   buttons.push([Markup.button.callback('❌ Cerrar', 'pantry_close')]);
 
-  ctx.reply('📦 ¿Qué zona quieres ver?', {
+  await ctx.reply('📦 ¿Qué zona quieres ver?', {
     reply_markup: { inline_keyboard: buttons },
   });
 }
 
-export function handlePantryZone(ctx: Context & { match?: RegExpExecArray }): void {
+export async function handlePantryZone(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const zone = ctx.callbackQuery.data.replace('pantry_zone_', '') as StorageZone;
   pantryState.set(ctx.chat!.id, { zone, page: 0 });
-  showZonePage(ctx, zone, 0);
+  await showZonePage(ctx, zone, 0);
 }
 
-export function handlePantryPage(ctx: Context & { match?: RegExpExecArray }): void {
+export async function handlePantryPage(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const data = ctx.callbackQuery.data;
   const chatId = ctx.chat!.id;
@@ -45,16 +44,16 @@ export function handlePantryPage(ctx: Context & { match?: RegExpExecArray }): vo
   if (data === 'pantry_next') {
     state.page++;
     pantryState.set(chatId, state);
-    showZonePage(ctx, state.zone, state.page);
+    await showZonePage(ctx, state.zone, state.page);
   } else if (data === 'pantry_prev') {
     state.page--;
     pantryState.set(chatId, state);
-    showZonePage(ctx, state.zone, state.page);
+    await showZonePage(ctx, state.zone, state.page);
   }
 }
 
-function showZonePage(ctx: Context, zone: StorageZone, page: number): void {
-  const allProducts = productsRepo.getProductsByZone(zone);
+async function showZonePage(ctx: Context, zone: StorageZone, page: number): Promise<void> {
+  const allProducts = await productsRepo.getProductsByZone(zone);
   const activeProducts = allProducts.filter((p) => !p.is_depleted);
   const depletedProducts = allProducts.filter((p) => p.is_depleted);
 
@@ -73,7 +72,7 @@ function showZonePage(ctx: Context, zone: StorageZone, page: number): void {
     text += '_No hay productos en esta zona._';
   } else {
     text += pageItems
-      .map((p) => {
+      .map((p: any) => {
         const expiry = p.expiration_date
           ? ` (caduca: ${formatDate(p.expiration_date)})`
           : '';
@@ -87,29 +86,36 @@ function showZonePage(ctx: Context, zone: StorageZone, page: number): void {
   if (depletedProducts.length > 0) {
     text +=
       `\n\n_Agotados:_ ` +
-      depletedProducts.map((p) => p.name).join(', ');
+      depletedProducts.map((p: any) => p.name).join(', ');
   }
 
   text += `\n\n_Página ${currentPage + 1} de ${totalPages}_`;
 
-  const buttons = Markup.inlineKeyboard([
-    ...(currentPage > 0
-      ? [Markup.button.callback('⬅️ Anterior', 'pantry_prev')]
-      : []),
-    ...(currentPage < totalPages - 1
-      ? [Markup.button.callback('Siguiente ➡️', 'pantry_next')]
-      : []),
-    [Markup.button.callback('🔙 Volver a zonas', 'pantry_back')],
-    [Markup.button.callback('❌ Cerrar', 'pantry_close')],
+  const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
+  if (currentPage > 0) {
+    navButtons.push(Markup.button.callback('⬅️ Anterior', 'pantry_prev'));
+  }
+  if (currentPage < totalPages - 1) {
+    navButtons.push(Markup.button.callback('Siguiente ➡️', 'pantry_next'));
+  }
+
+  const actionButtons = [
+    Markup.button.callback('🔙 Volver a zonas', 'pantry_back'),
+    Markup.button.callback('❌ Cerrar', 'pantry_close'),
+  ];
+
+  const keyboard = Markup.inlineKeyboard([
+    ...(navButtons.length > 0 ? [navButtons] : []),
+    actionButtons,
   ]);
 
-  ctx.editMessageText(text, {
+  await ctx.editMessageText(text, {
     parse_mode: 'Markdown',
-    ...buttons,
+    ...keyboard,
   });
 }
 
-export function handlePantryBack(ctx: Context): void {
+export async function handlePantryBack(ctx: Context): Promise<void> {
   const buttons = STORAGE_ZONES.map((zone) => [
     Markup.button.callback(
       `${ZONE_EMOJIS[zone]} ${capitalize(zone)}`,
@@ -118,13 +124,13 @@ export function handlePantryBack(ctx: Context): void {
   ]);
   buttons.push([Markup.button.callback('❌ Cerrar', 'pantry_close')]);
 
-  ctx.editMessageText('📦 ¿Qué zona quieres ver?', {
+  await ctx.editMessageText('📦 ¿Qué zona quieres ver?', {
     reply_markup: { inline_keyboard: buttons },
   });
 }
 
-export function handlePantryClose(ctx: Context): void {
-  ctx.deleteMessage().catch(() => {});
+export async function handlePantryClose(ctx: Context): Promise<void> {
+  await ctx.deleteMessage().catch(() => {});
   pantryState.delete(ctx.chat!.id);
 }
 

@@ -18,8 +18,8 @@ interface BotContext extends Context {
 const bot = new Telegraf<BotContext>(config.telegramBotToken);
 
 // ── Middleware ──────────────────────────────────────────
-bot.use(sessionMiddleware);
-bot.use(authMiddleware);
+bot.use(sessionMiddleware as any);
+bot.use(authMiddleware());
 
 // ── Commands ───────────────────────────────────────────
 bot.start(startHandler);
@@ -128,7 +128,7 @@ bot.on(message('text'), async (ctx) => {
   if (!text || text.length < 3) return;
 
   try {
-    await ctx.replyChatAction('typing');
+    await ctx.sendChatAction('typing');
     const response = await askDeepSeek(text);
     await ctx.reply(response, { parse_mode: 'Markdown' });
   } catch (error) {

@@ -99,12 +99,9 @@ export async function handleUnitSelection(ctx: Context): Promise<void> {
 
   session.wizard.data.unit = unit;
 
-  await ctx.editMessageText(
+  await ctx.reply(
     `Unidad seleccionada: ${UNIT_LABELS[unit]}\n` +
       'Ahora escribe solo la cantidad (ej: 2, 0.5, 3):',
-    {
-      reply_markup: { force_reply: true },
-    },
   );
 }
 
@@ -134,9 +131,9 @@ async function handleQuantityInput(
   session.wizard.data.quantity = quantity;
 
   if (match[2]) {
-    const unit = match[2].toLowerCase() as ProductUnit;
+    const rawUnit = match[2].toLowerCase();
     // Normalize 'l' to 'L'
-    session.wizard.data.unit = unit === 'l' ? 'L' : unit;
+    session.wizard.data.unit = (rawUnit === 'l' ? 'L' : rawUnit) as ProductUnit;
   }
   // If no unit in text, user must have selected via button (already in session)
 
