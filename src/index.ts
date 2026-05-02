@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 
 // Load .env FIRST, before any other imports
 const envPath = path.resolve(__dirname, '../.env');
@@ -52,29 +53,57 @@ async function setWebhookWithRetry(url: string, maxRetries = 5): Promise<void> {
 }
 
 async function main() {
-  // Set webhook on Telegram with retry on 429
+  // 1. Register webhook URL with Telegram (this is the ONLY setWebhook call)
   await setWebhookWithRetry(WEBHOOK_URL!);
 
-  // Start webhook server (no polling)
-  await bot.launch({
-    webhook: {
-      domain: 'localhost',
-      port: PORT,
-      path: '/api/webhook',
-    },
+  // 2. Create the webhook callback handler WITHOUT calling setWebhook again
+  //    bot.createWebhook() returns a request handler, does NOT call setWebhook
+  const webhookHandler = await bot.createWebhook({
+    domain: 'localhost',
+    path: '/api/webhook',
   });
 
-  console.log(`🤖 DespensaBot is running (webhook mode on port ${PORT})!`);
+  // 3. Create raw HTTP server (no express needed)
+  const server = http.createServer((req, res) => {
+    // Health check
+    if (req.method === 'GET' && req.url === '/api/webhook') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', bot: 'DespensaBot' }));
+      return;
+    }
 
-  // Scheduler for daily alerts
+    // Webhook updates from Telegram
+    if (req.method === 'POST' && req.url === '/api/webhook') {
+      webhookHandler(req, res);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  // 4. Start listening
+  server.listen(PORT, () => {
+    console.log(`🤖 DespensaBot is running (webhook mode on port ${PORT})!`);
+    console.log(`🔗 Webhook URL: ${WEBHOOK_URL}`);
+  });
+
+  // 5. Scheduler for daily alerts
   startScheduler(bot);
+
+  // 6. Graceful shutdown
+  const shutdown = () => {
+    console.log('\n[Shutdown] Stopping bot...');
+    server.close();
+    bot.stop();
+    process.exit(0);
+  };
+
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 main().catch((err) => {
   console.error('[FATAL] Failed to start bot:', err);
   process.exit(1);
 });
-
-// Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
