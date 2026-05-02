@@ -7,7 +7,7 @@
 - **Database**: Neon (PostgreSQL serverless) via `@neondatabase/serverless`
 - **AI**: DeepSeek Chat via OpenAI SDK (`openai` npm package, base URL `https://api.deepseek.com`)
 - **Scheduler**: node-cron (runs in-process, bot must stay running 24/7)
-- **Deploy**: Render (Web Service, Node runtime)
+- **Deploy**: Fly.io (Docker, worker process, 24/7)
 - **Testing**: Vitest
 
 ## Dev commands
@@ -77,17 +77,18 @@ tests/
 - **DeepSeek model**: `deepseek-v4-flash` (NOT `deepseek-chat`, which is deprecated as of 2026-07-24).
 - **Scheduler**: Runs in-process via node-cron. Bot must stay running 24/7 for alerts to work.
 
-## Render deployment
+## Fly.io deployment
 
-1. Push to GitHub
-2. In Render dashboard, create a new **Web Service**
-3. Connect your GitHub repo
-4. Set:
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `node dist/index.js`
-5. Add environment variables in Render dashboard:
-   - `TELEGRAM_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `DATABASE_URL`
-6. Deploy
+1. Install Fly CLI: `curl -fsSL https://fly.io/install.sh | sh`
+2. Login: `fly auth login`
+3. Launch: `fly launch` (uses existing fly.toml)
+4. Deploy: `fly deploy`
+5. Set secrets (not in fly.toml for security):
+   ```bash
+   fly secrets set TELEGRAM_BOT_TOKEN=...
+   fly secrets set DEEPSEEK_API_KEY=...
+   fly secrets set DATABASE_URL=...
+   ```
 
 ## Testing quirks
 
