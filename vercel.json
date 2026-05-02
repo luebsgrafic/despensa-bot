@@ -12,12 +12,16 @@
   ],
   "routes": [
     {
+      "src": "/",
+      "dest": "/api/webhook.ts"
+    },
+    {
       "src": "/api/webhook",
-      "dest": "api/webhook.ts"
+      "dest": "/api/webhook.ts"
     },
     {
       "src": "/api/cron/expiration",
-      "dest": "api/cron/expiration.ts"
+      "dest": "/api/cron/expiration.ts"
     }
   ],
   "crons": [
