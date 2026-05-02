@@ -18,64 +18,11 @@ import { startScheduler } from './services/scheduler';
 const bot = createBot();
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
-
-if (!WEBHOOK_URL) {
-  console.error('[FATAL] WEBHOOK_URL is not set in .env or environment');
-  process.exit(1);
-}
 
 console.log('[Config] PORT:', PORT);
-console.log('[Config] WEBHOOK_URL:', WEBHOOK_URL);
-
-/**
- * Check if the webhook is already set to the correct URL.
- * Only calls setWebhook if the current URL differs.
- */
-async function ensureWebhook(url: string, maxRetries = 5): Promise<void> {
-  // 1. Check current webhook status
-  try {
-    const info = await bot.telegram.getWebhookInfo();
-    if (info.url === url) {
-      console.log(`[Webhook] Already set to: ${url} — skipping registration`);
-      return;
-    }
-    if (info.url) {
-      console.log(`[Webhook] Current URL differs: "${info.url}" -> "${url}"`);
-    }
-  } catch (error: any) {
-    console.warn('[Webhook] Could not get current webhook info:', error?.message);
-  }
-
-  // 2. Set webhook with retry on 429
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await bot.telegram.setWebhook(url);
-      if (result) {
-        console.log(`[Webhook] Set successfully to: ${url}`);
-        return;
-      }
-    } catch (error: any) {
-      if (error?.response?.statusCode === 429) {
-        const retryAfter = error?.response?.parameters?.retry_after || 10;
-        const waitMs = retryAfter * 1000 + attempt * 2000;
-        console.warn(
-          `[Webhook] Rate limited (429). Retry ${attempt}/${maxRetries} in ${waitMs}ms...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw new Error(`Failed to set webhook after ${maxRetries} retries`);
-}
 
 async function main() {
-  // 1. Ensure webhook is registered (skips if already correct)
-  await ensureWebhook(WEBHOOK_URL!);
-
-  // 2. Express server — NO bot.launch(), NO bot.createWebhook()
+  // Express server — NO bot.launch(), NO bot.createWebhook(), NO setWebhook
   const app = express();
 
   // Health check for nginx
@@ -83,7 +30,9 @@ async function main() {
     res.status(200).json({ status: 'ok', bot: 'DespensaBot' });
   });
 
-  // Webhook endpoint — raw Buffer body, Telegraf handles parsing
+  // Webhook endpoint — raw Buffer body, passed directly to bot.handleUpdate()
+  // setWebhook is NOT called here — it must be configured manually via curl:
+  // curl -s "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<domain>/api/webhook"
   app.post('/api/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     try {
       if (!req.body || Buffer.byteLength(req.body as any) === 0) {
@@ -104,23 +53,22 @@ async function main() {
     }
   });
 
-  // 3. Start listening
+  // Start listening
   const server = app.listen(PORT, () => {
     console.log(`🤖 DespensaBot is running (webhook mode on port ${PORT})!`);
-    console.log(`🔗 Webhook URL: ${WEBHOOK_URL}`);
+    console.log(`ℹ️  Webhook must be set manually via curl to Telegram API`);
   });
 
-  // 4. Scheduler for daily alerts
+  // Scheduler for daily alerts
   startScheduler(bot);
 
-  // 5. Graceful shutdown
+  // Graceful shutdown
   const shutdown = () => {
     console.log('\n[Shutdown] Stopping bot...');
     bot.stop();
     server.close(() => {
       process.exit(0);
     });
-    // Force exit if graceful close takes too long
     setTimeout(() => process.exit(0), 5000).unref();
   };
 
