@@ -28,20 +28,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const message = buildExpirationMessage(expiringProducts);
     const bot = new Telegraf(config.telegramBotToken);
 
-    let notifiedCount = 0;
-    for (const userId of config.allowedUsers) {
-      try {
-        await bot.telegram.sendMessage(userId, message, {
-          parse_mode: 'Markdown',
-        });
-        notifiedCount++;
-      } catch (error) {
-        console.error(`[Cron] Failed to notify user ${userId}:`, error);
-      }
-    }
-
-    console.log(`[Cron] Notified ${notifiedCount} users about ${expiringProducts.length} products`);
-    res.status(200).json({ notified: notifiedCount, products: expiringProducts.length });
+    console.log(`[Cron] Found ${expiringProducts.length} expiring products, but no users configured for notifications`);
+    res.status(200).json({ notified: 0, products: expiringProducts.length, note: 'No notification targets configured' });
   } catch (error) {
     console.error('[Cron] Error:', error);
     res.status(500).json({ error: 'Internal error' });

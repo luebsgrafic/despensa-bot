@@ -3,11 +3,19 @@ import { Telegraf } from 'telegraf';
 import { products as productsRepo } from '../db';
 import { config } from '../utils/config';
 
+// In-memory set of chat IDs that have interacted with the bot
+// In a production app this should be persisted
+const activeChats = new Set<number>();
+
+export function registerChat(chatId: number): void {
+  activeChats.add(chatId);
+}
+
 export function startScheduler(bot: Telegraf): void {
   const cronExpression = `${config.alertMinute} ${config.alertHour} * * *`;
 
   cron.schedule(cronExpression, async () => {
-    console.log(`[Scheduler] Running daily alert check at ${config.alertHour}:${config.alertMinute}`);
+    console.log(`[Scheduler] Running daily alert check`);
 
     try {
       const expiringProducts = await productsRepo.getExpiringProducts(
@@ -21,18 +29,14 @@ export function startScheduler(bot: Telegraf): void {
 
       const message = buildExpirationMessage(expiringProducts);
 
-      // Notify all authorized users
-      for (const userId of config.allowedUsers) {
+      for (const chatId of activeChats) {
         try {
-          await bot.telegram.sendMessage(userId, message, {
+          await bot.telegram.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
           });
-          console.log(`[Scheduler] Notification sent to user ${userId}`);
+          console.log(`[Scheduler] Notification sent to chat ${chatId}`);
         } catch (error) {
-          console.error(
-            `[Scheduler] Failed to notify user ${userId}:`,
-            error,
-          );
+          console.error(`[Scheduler] Failed to notify chat ${chatId}:`, error);
         }
       }
     } catch (error) {
@@ -40,9 +44,7 @@ export function startScheduler(bot: Telegraf): void {
     }
   });
 
-  console.log(
-    `[Scheduler] Daily alert scheduled for ${config.alertHour}:${config.alertMinute}`,
-  );
+  console.log(`[Scheduler] Daily alert scheduled for ${config.alertHour}:${config.alertMinute}`);
 }
 
 function buildExpirationMessage(

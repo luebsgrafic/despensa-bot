@@ -1,6 +1,5 @@
 import { createBot } from './bot';
 import { startScheduler } from './services/scheduler';
-import { config } from './utils/config';
 
 const bot = createBot();
 
@@ -9,7 +8,6 @@ startScheduler(bot);
 
 bot.launch().then(() => {
   console.log('🤖 DespensaBot is running (long polling)!');
-  console.log(`👥 Allowed users: ${config.allowedUsers.join(', ')}`);
 });
 
 // Graceful shutdown
