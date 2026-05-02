@@ -9,9 +9,7 @@
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "vercel-build": "tsc",
     "set-webhook": "tsx src/scripts/set-webhook.ts"
   },
   "keywords": [

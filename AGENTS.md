@@ -6,8 +6,8 @@
 - **Bot framework**: Telegraf v4.16.3
 - **Database**: Neon (PostgreSQL serverless) via `@neondatabase/serverless`
 - **AI**: DeepSeek Chat via OpenAI SDK (`openai` npm package, base URL `https://api.deepseek.com`)
-- **Scheduler**: Vercel Cron Jobs (production) / node-cron (local dev)
-- **Deploy**: Vercel (serverless functions via `api/` routes)
+- **Scheduler**: node-cron (runs in-process, bot must stay running 24/7)
+- **Deploy**: Render (Web Service, Node runtime)
 - **Testing**: Vitest
 
 ## Dev commands
@@ -60,11 +60,7 @@ src/
     deepseek.ts         # OpenAI SDK → DeepSeek, builds inventory context
     scheduler.ts        # Local-only: daily 9:00 AM expiration alerts via node-cron
   scripts/
-    set-webhook.ts      # Script to configure Telegram webhook URL
-api/
-  webhook.ts            # Vercel serverless function: receives Telegram updates
-  cron/
-    expiration.ts       # Vercel Cron Job: daily expiration alerts at 9:00
+    set-webhook.ts      # Script to configure Telegram webhook URL (for webhook-based deploys)
 tests/
   products.test.ts      # Mocked product repository tests
   shopping.test.ts      # Mocked shopping list repository tests
@@ -72,24 +68,26 @@ tests/
 
 ## Key architecture decisions
 
-- **Dual mode**: `src/bot.ts` is the shared bot factory. `src/index.ts` uses long polling (local dev). `api/webhook.ts` uses webhooks (Vercel production).
+- **Long polling**: Bot uses long polling (not webhooks). Must stay running 24/7.
 - **Async DB**: All DB functions are async (Neon's `@neondatabase/serverless` returns promises).
 - **Wizard state**: Stored in Telegraf's in-memory session (`MemorySessionStore`). Wizard steps are tracked via `session.wizard.step` string enum.
 - **No Scenes**: Telegraf v4 scenes are deprecated. Wizard is implemented manually via session state + conditional routing in `bot.on('message')`.
 - **Callback routing**: All inline button callbacks are handled in a single `bot.on('callback_query')` with `data.startsWith()` branching.
 - **AI fallback**: Any unrecognized text message (not in wizard, not a command) is sent to DeepSeek with the full inventory as context.
 - **DeepSeek model**: `deepseek-v4-flash` (NOT `deepseek-chat`, which is deprecated as of 2026-07-24).
-- **Scheduler**: Local dev uses node-cron in-process. Production uses Vercel Cron Jobs (`vercel.json` crons section → `api/cron/expiration.ts`).
-- **Webhook setup**: After deploying to Vercel, run `npm run set-webhook -- https://<project>.vercel.app/api/webhook` to configure Telegram.
+- **Scheduler**: Runs in-process via node-cron. Bot must stay running 24/7 for alerts to work.
 
-## Vercel deployment
+## Render deployment
 
 1. Push to GitHub
-2. Import repo in Vercel
-3. Set environment variables in Vercel dashboard:
-   - `TELEGRAM_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `TELEGRAM_ALLOWED_USERS`, `DATABASE_URL`
-4. Deploy
-5. Run: `npm run set-webhook -- https://<project>.vercel.app/api/webhook`
+2. In Render dashboard, create a new **Web Service**
+3. Connect your GitHub repo
+4. Set:
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `node dist/index.js`
+5. Add environment variables in Render dashboard:
+   - `TELEGRAM_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `DATABASE_URL`
+6. Deploy
 
 ## Testing quirks
 
