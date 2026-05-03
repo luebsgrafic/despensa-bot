@@ -1,6 +1,6 @@
 import { Context, Markup } from 'telegraf';
 import { products as productsRepo, shopping as shoppingRepo, movements } from '../db';
-import { Product } from '../types';
+import { Product, ShoppingItem } from '../types';
 
 // In-memory state for consume flow per chat
 interface ConsumeState {
@@ -170,33 +170,37 @@ async function executeConsume(
     ctx.from!.id,
   );
 
-  const message =
+  let message =
     `✅ *${product.name}*: ${product.quantity}${product.unit} → ` +
     `${Math.max(0, newQuantity)}${product.unit}` +
     (isDepleted ? '\n\n⚠️ *Producto agotado*' : '');
 
+  // Auto-add to shopping list if stock is at or below minimum
+  const shouldAutoAdd =
+    product.min_stock !== null && product.min_stock > 0 && newQuantity <= product.min_stock;
+
+  if (shouldAutoAdd) {
+    // Check if product is already in shopping list (idempotent)
+    const existingItems = await shoppingRepo.getUncheckedItems();
+    const alreadyInList = existingItems.some(
+      (item: ShoppingItem) => item.product_name.toLowerCase() === product.name.toLowerCase(),
+    );
+
+    if (!alreadyInList) {
+      await shoppingRepo.addShoppingItem({
+        product_name: product.name,
+        quantity: 1,
+        unit: product.unit,
+        added_by: ctx.from!.id,
+      });
+    }
+
+    message += `\n\n⚠️ *Stock mínimo (${product.min_stock}${product.unit}) alcanzado* — añadido a la lista de la compra.`;
+  }
+
   await ctx.editMessageText(message, { parse_mode: 'Markdown' });
 
-  // Check if we should ask about shopping list
-  const shouldAsk =
-    isDepleted ||
-    (product.min_stock !== null && newQuantity <= product.min_stock);
-
-  if (shouldAsk) {
-    const buttons = Markup.inlineKeyboard([
-      Markup.button.callback('🛒 Sí, añadir a la lista', 'consume_add_shopping'),
-      Markup.button.callback('✅ No, gracias', 'consume_done'),
-    ]);
-
-    await ctx.reply(
-      isDepleted
-        ? `🛒 *${product.name}* está agotado. ¿Lo añado a la lista de la compra?`
-        : `🛒 *${product.name}* está por debajo del stock mínimo (${product.min_stock}${product.unit}). ¿Lo añado a la lista de la compra?`,
-      { parse_mode: 'Markdown', ...buttons },
-    );
-  } else {
-    consumeState.delete(ctx.chat!.id);
-  }
+  consumeState.delete(ctx.chat!.id);
 }
 
 export async function handleAddToShopping(ctx: Context): Promise<void> {
