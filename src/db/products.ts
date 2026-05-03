@@ -1,6 +1,5 @@
 import { getSql } from './schema';
 import { Product, StorageZone, ProductUnit } from '../types';
-import { logMovement } from './movements';
 
 export interface CreateProductInput {
   name: string;
@@ -142,20 +141,10 @@ export async function updateProduct(
 
   // If zone_id is being updated, also sync the legacy zone column
   let zoneValue = input.zone ?? existing.zone;
-  let oldZoneName: string | null = null;
-  let newZoneName: string | null = null;
-  const zoneChanged = input.zone_id !== undefined && input.zone_id !== existing.zone_id;
-
-  if (zoneChanged) {
+  if (input.zone_id !== undefined && input.zone_id !== existing.zone_id) {
     const zoneName = await getZoneNameById(input.zone_id);
     if (zoneName) {
       zoneValue = zoneName as StorageZone;
-      newZoneName = zoneName;
-    }
-    // Get old zone name for the movement log
-    if (existing.zone_id) {
-      const oldZone = await getZoneNameById(existing.zone_id);
-      oldZoneName = oldZone;
     }
   }
 
@@ -175,22 +164,6 @@ export async function updateProduct(
   `;
   const product = (rows as unknown as any[])[0];
   if (!product) return undefined;
-
-  // Log movement if zone changed
-  if (zoneChanged && newZoneName) {
-    try {
-      await logMovement(
-        id,
-        'moved',
-        oldZoneName || 'desconocida',
-        newZoneName,
-        0,
-      );
-    } catch (logError) {
-      console.error('[updateProduct] Failed to log movement:', logError);
-    }
-  }
-
   const enriched = await enrichWithZone(product);
   return normalizeProduct(enriched);
 }
