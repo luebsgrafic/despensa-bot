@@ -23,7 +23,7 @@ export const config = {
   databaseUrlTest: process.env['DATABASE_URL_TEST'] || '',
   mem0ApiKey: process.env['MEM0_API_KEY'] || '',
 
-  geminiModel: 'gemini-1.5-flash-8b',
+  geminiModel: process.env['GEMINI_MODEL'] || 'gemini-2.5-flash-lite',
   geminiMaxTokens: 800,
 
   alertHour: 9,

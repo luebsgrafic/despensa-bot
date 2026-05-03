@@ -12,6 +12,7 @@ if (fs.existsSync(envPath)) {
 
 import { initializeSchema } from './db/schema';
 import { createBot } from './bot';
+import { config } from './utils/config';
 import { startScheduler } from './services/scheduler';
 
 // ── 2. Validate environment ────────────────────────────
@@ -32,6 +33,7 @@ if (WEBHOOK_URL.includes('localhost')) {
 
 console.log('[Config] PORT:', PORT);
 console.log('[Config] WEBHOOK_URL:', WEBHOOK_URL);
+console.log('[Config] GEMINI_MODEL:', config.geminiModel);
 
 // ── 3. Initialize database schema ──────────────────────
 async function initDb(): Promise<void> {
