@@ -74,6 +74,12 @@ export async function initializeSchema(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS zone_id INTEGER REFERENCES zones(id)
   `;
 
+  // ── Ensure unique index on system zones ────────────────
+  // (needed by ON CONFLICT DO NOTHING and to prevent duplicates)
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system ON zones(name) WHERE user_id IS NULL
+  `;
+
   // ── Create default zones (idempotent) ──────────────────
   for (const name of DEFAULT_ZONES) {
     await sql`
@@ -83,7 +89,30 @@ export async function initializeSchema(): Promise<void> {
     `;
   }
 
+  // ── Remove spurious system zones not in DEFAULT_ZONES ──
+  // (e.g., "frio" created by test rename + cleanTestDb interaction).
+  // First reassign any products pointing to them, then delete.
+  await sql`
+    UPDATE products p
+    SET zone_id = (SELECT id FROM zones WHERE name = p.zone AND user_id IS NULL)
+    WHERE p.zone_id IN (
+      SELECT id FROM zones WHERE user_id IS NULL
+        AND name NOT IN (${DEFAULT_ZONES[0]}, ${DEFAULT_ZONES[1]}, ${DEFAULT_ZONES[2]}, ${DEFAULT_ZONES[3]}, ${DEFAULT_ZONES[4]})
+    )
+  `;
+  await sql`
+    DELETE FROM zones WHERE user_id IS NULL
+      AND name NOT IN (${DEFAULT_ZONES[0]}, ${DEFAULT_ZONES[1]}, ${DEFAULT_ZONES[2]}, ${DEFAULT_ZONES[3]}, ${DEFAULT_ZONES[4]})
+  `;
+
+  // ── Drop legacy CHECK constraint on zone column ─────────
+  // Prevents storing custom zone names; we use zone_id + zones table instead.
+  await sql`
+    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_zone_check
+  `;
+
   // ── Migrate existing products: zone (text) → zone_id (FK) ──
+  // Products with NULL zone_id but have a legacy zone
   await sql`
     UPDATE products p
     SET zone_id = (SELECT id FROM zones WHERE name = p.zone AND user_id IS NULL)

@@ -73,7 +73,7 @@ export async function initTestDb(): Promise<void> {
       name TEXT NOT NULL,
       quantity REAL NOT NULL DEFAULT 0,
       unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
-      zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
+      zone TEXT NOT NULL,
       zone_id INTEGER REFERENCES zones(id),
       min_stock REAL,
       expiration_date TEXT,
