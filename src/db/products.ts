@@ -36,9 +36,9 @@ function selectWithJoin(whereClause: string, orderClause: string, values: any[])
     ${whereClause}
     ${orderClause}
   `;
-  // Use tagged template with the query as the first string and values as params
-  // This is safe because the WHERE/ORDER clauses are controlled strings, not user input
-  return sql.unsafe(query, values);
+  // Use unsafe() to execute raw SQL with positional params ($1, $2, etc.)
+  // The WHERE/ORDER clauses are controlled strings, values are user-safe params
+  return (sql as any).unsafe(query, values);
 }
 
 async function getZoneNameById(zoneId: number | null | undefined): Promise<string | null> {
