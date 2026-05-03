@@ -10,12 +10,12 @@ let dbInitialized = false;
  * clean up in afterAll.
  */
 export function getTestSql(): NeonQueryFunction<false, false> {
-  // Only use DATABASE_URL_TEST — never fall back to production DATABASE_URL
-  const url = process.env['DATABASE_URL_TEST'];
+  // Use DATABASE_URL (which is overridden by setup-integration.ts to match DATABASE_URL_TEST).
+  // This ensures getTestSql() and getSql() always connect to the same database.
+  const url = process.env['DATABASE_URL'];
   if (!url) {
     throw new Error(
-      'DATABASE_URL_TEST not set. Create a Neon branch for testing:\n' +
-      '  DATABASE_URL_TEST=postgresql://user:pass@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require',
+      'DATABASE_URL not set. Ensure DATABASE_URL_TEST is configured and setup-integration.ts runs.',
     );
   }
   if (!testSql) {
@@ -56,7 +56,7 @@ export async function initTestDb(): Promise<void> {
       ON zones(name) WHERE user_id IS NULL
     `;
 
-    // Insert exactly 5 default zones
+    // Insert exactly 5 default zones (idempotent via unique index)
     await sql`
       INSERT INTO zones (user_id, name, emoji)
       VALUES
@@ -65,6 +65,7 @@ export async function initTestDb(): Promise<void> {
         (NULL, 'armario_cocina', '🚪'),
         (NULL, 'despensa', '📦'),
         (NULL, 'otros', '📌')
+      ON CONFLICT DO NOTHING
     `;
 
     await sql`CREATE TABLE products (
