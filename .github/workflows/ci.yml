@@ -31,7 +31,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: test
           DATABASE_URL: postgresql://test
-          DEEPSEEK_API_KEY: test
+          GEMINI_API_KEY: test
           DATABASE_URL_TEST: ${{ secrets.DATABASE_URL_TEST }}
         run: npm test
 

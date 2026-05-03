@@ -18,13 +18,12 @@ function requireEnv(name: string): string {
 
 export const config = {
   telegramBotToken: requireEnv('TELEGRAM_BOT_TOKEN'),
-  deepseekApiKey: requireEnv('DEEPSEEK_API_KEY'),
+  geminiApiKey: requireEnv('GEMINI_API_KEY'),
   databaseUrl: requireEnv('DATABASE_URL'),
   databaseUrlTest: process.env['DATABASE_URL_TEST'] || '',
 
-  deepseekModel: 'deepseek-v4-flash',
-  deepseekBaseUrl: 'https://api.deepseek.com',
-  deepseekMaxTokens: 800,
+  geminiModel: 'gemini-1.5-flash-8b',
+  geminiMaxTokens: 800,
 
   alertHour: 9,
   alertMinute: 0,

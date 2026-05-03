@@ -1,23 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Import safeReply directly
-import { safeReply } from '../src/services/deepseek';
-
-describe('processWithAI — empty response from DeepSeek', () => {
-  it('safeReply should use fallback when message.content is empty (simulates reasoning_tokens=300, completion_tokens=300, content="")', async () => {
-    const mockCtx = { reply: vi.fn().mockResolvedValue(undefined) };
-
-    // Simulate: DeepSeek returns empty content because all tokens went to reasoning
-    await safeReply(mockCtx, '');
-
-    const callArgs = mockCtx.reply.mock.calls[0];
-    expect(callArgs[0]).toBe(
-      'No he podido interpretar bien el mensaje. ¿Puedes decirme el producto, cantidad y zona? Ejemplo: añadir 2 kg de pollo en congelador.',
-    );
-    // Verify it was NOT called with empty string
-    expect(mockCtx.reply).not.toHaveBeenCalledWith('');
-  });
-});
+import { safeReply } from '../src/services/gemini';
 
 describe('safeReply', () => {
   let mockCtx: any;
@@ -27,6 +10,16 @@ describe('safeReply', () => {
       reply: vi.fn().mockResolvedValue(undefined),
     };
     vi.clearAllMocks();
+  });
+
+  it('should use fallback when message.content is empty', async () => {
+    await safeReply(mockCtx, '');
+
+    const callArgs = mockCtx.reply.mock.calls[0];
+    expect(callArgs[0]).toBe(
+      'No he podido interpretar bien el mensaje. ¿Puedes decirme el producto, cantidad y zona? Ejemplo: añadir 2 kg de pollo en congelador.',
+    );
+    expect(mockCtx.reply).not.toHaveBeenCalledWith('');
   });
 
   it('should call ctx.reply with normal text unchanged', async () => {
@@ -67,7 +60,7 @@ describe('safeReply', () => {
     );
   });
 
-  it('should handle text with underscores like armario_cocina without Markdown errors', async () => {
+  it('should handle text with underscores without Markdown errors', async () => {
     const text = 'El producto está en armario_cocina';
     await safeReply(mockCtx, text);
     const callArgs = mockCtx.reply.mock.calls[0];

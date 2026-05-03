@@ -1,11 +1,9 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../utils/config';
 import { products as productsRepo, shopping as shoppingRepo, zones as zonesRepo } from '../db';
 
-const client = new OpenAI({
-  baseURL: config.deepseekBaseUrl,
-  apiKey: config.deepseekApiKey,
-});
+const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+const model = genAI.getGenerativeModel({ model: config.geminiModel });
 
 const FALLBACK_MESSAGE =
   'No he podido interpretar bien el mensaje. ¿Puedes decirme el producto, cantidad y zona? ' +
@@ -13,12 +11,6 @@ const FALLBACK_MESSAGE =
 
 const MAX_REPLY_LENGTH = 4096;
 
-/**
- * Safely sends a text reply to a Telegram context.
- * - Converts to string, trims, falls back if empty
- * - Truncates if over 4096 chars
- * - Does NOT use Markdown (safe for dynamic content)
- */
 export function safeReply(ctx: any, text: unknown, extra?: Record<string, any>): Promise<any> {
   let safeText = String(text ?? '').trim();
 
@@ -83,38 +75,155 @@ Unidades disponibles: ud, kg, L, g, ml
 
 Responde en español, tono amigable, máximo 200 tokens.`;
 
-  const completion = await client.chat.completions.create({
-    model: config.deepseekModel,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    max_tokens: config.deepseekMaxTokens,
-    temperature: 0.3,
-  });
+  try {
+    const chat = model.startChat({
+      systemInstruction: { role: 'user', parts: [{ text: systemPrompt }] },
+    });
 
-  const rawContent = completion.choices[0]?.message?.content;
-  const response = (rawContent || '').trim();
+    const result = await chat.sendMessage(userMessage);
+    const response = result.response.text().trim();
 
-  // Log if DeepSeek returned empty
-  if (!response) {
-    const usage = completion.usage;
-    console.warn('[DeepSeek] Empty response received');
-    console.warn('[DeepSeek] Model:', config.deepseekModel);
-    console.warn('[DeepSeek] Usage:', JSON.stringify(usage));
-    console.warn('[DeepSeek] Finish reason:', completion.choices[0]?.finish_reason);
-    return '';
+    if (!response) {
+      console.warn('[Gemini] Empty response received');
+      return '';
+    }
+
+    const action = parseAction(response);
+
+    if (action) {
+      return executeAction(action, userId);
+    }
+
+    return response.replace(/^ACCION:.*?\n/i, '').trim();
+  } catch (error: any) {
+    console.error('[Gemini] API error:', error?.message || error);
+    return '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.';
   }
+}
 
-  // Parse action from response
-  const action = parseAction(response);
+export async function transcribeAndProcessAudio(
+  base64Audio: string,
+  mimeType: string,
+  userId: number,
+): Promise<{ transcription: string; response: string }> {
+  try {
+    const allProducts = await productsRepo.getAllProducts();
+    const activeProducts = allProducts.filter((p) => !p.is_depleted);
+    const shoppingItems = await shoppingRepo.getUncheckedItems();
+    const zones = await zonesRepo.getZonesByUser(userId);
 
-  if (action) {
-    return executeAction(action, userId);
+    const inventorySummary = buildInventorySummary(activeProducts);
+    const shoppingSummary = buildShoppingSummary(shoppingItems);
+    const zonesList = zones.map((z) => z.name).join(', ');
+
+    const prompt = `Eres un asistente de despensa y cocina. Tu función es ayudar a una familia a gestionar su inventario.
+
+INVENTARIO ACTUAL:
+${inventorySummary || 'Vacío'}
+
+LISTA DE LA COMPRA:
+${shoppingSummary || 'Vacía'}
+
+Transcribe este audio y extrae la intención del usuario para un bot de gestión de despensa.
+Responde SOLO en JSON con este formato exacto:
+{
+  "transcription": "texto transcrito",
+  "intent": "add|remove|move|list|expiring|shopping|unknown",
+  "entities": {
+    "product": "nombre del producto o null",
+    "quantity": número o null,
+    "unit": "kg|g|L|ud o null",
+    "zone": "nombre de zona o null",
+    "expiry_date": "DD/MM/YYYY o null"
   }
+}
 
-  // Clean response from any ACCION prefix
-  return response.replace(/^ACCION:.*?\n/i, '').trim();
+Zonas disponibles: ${zonesList}
+Unidades disponibles: ud, kg, L, g, ml`;
+
+    const audioPart = {
+      inlineData: {
+        data: base64Audio,
+        mimeType,
+      },
+    };
+
+    const result = await model.generateContent([prompt, audioPart as any]);
+    const text = result.response.text().trim();
+
+    if (!text) {
+      return { transcription: '', response: '🤖 No pude transcribir el audio. Intenta de nuevo.' };
+    }
+
+    // Parse the JSON response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return { transcription: '', response: '🤖 No entendí el audio. Intenta escribirlo.' };
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const transcription = parsed.transcription || '';
+    const intent = parsed.intent || 'unknown';
+    const entities = parsed.entities || {};
+
+    if (intent === 'unknown' || !transcription) {
+      return {
+        transcription,
+        response: `🎤 Escuché: "${transcription || 'algo'}"\n\nNo entendí exactamente qué quieres hacer. Puedes escribir "añadir 2 litros de leche" o usar los botones.`,
+      };
+    }
+
+    // Process the intent using the same action pipeline
+    const actionResponse = await processIntentAsAction(intent, entities, transcription, userId);
+
+    return {
+      transcription,
+      response: `🎤 Escuché: "${transcription}"\n\n${actionResponse}`,
+    };
+  } catch (error: any) {
+    console.error('[Gemini Audio] Error:', error?.message || error);
+    return {
+      transcription: '',
+      response: '🤖 Lo siento, hubo un error al procesar el audio. Intenta escribirlo.',
+    };
+  }
+}
+
+async function processIntentAsAction(
+  intent: string,
+  entities: any,
+  transcription: string,
+  userId: number,
+): Promise<string> {
+  const actionMap: Record<string, string> = {
+    add: 'add_product',
+    remove: 'add_shopping',
+    move: 'add_product',
+    list: 'show_pantry',
+    expiring: 'show_pantry',
+    shopping: 'show_shopping',
+  };
+
+  const mappedAction = actionMap[intent] || 'answer';
+  const product = entities.product || 'Producto';
+  const quantity = entities.quantity || 1;
+  const unit = entities.unit || 'ud';
+  const zone = entities.zone || '';
+
+  const params: Record<string, string> = {
+    nombre: product,
+    cantidad: String(quantity),
+    unidad: unit,
+    zona: zone,
+  };
+
+  const fakeAction: AIAction = {
+    action: mappedAction as AIAction['action'],
+    params,
+    message: transcription,
+  };
+
+  return executeAction(fakeAction, userId);
 }
 
 function parseAction(response: string): AIAction | null {
@@ -125,7 +234,6 @@ function parseAction(response: string): AIAction | null {
   const paramsStr = actionMatch[2];
   const params: Record<string, string> = {};
 
-  // Parse key:value pairs
   const pairs = paramsStr.split('|');
   for (const pair of pairs) {
     const [key, ...valParts] = pair.split(':');
@@ -148,7 +256,6 @@ async function executeAction(action: AIAction, userId: number): Promise<string> 
         const unit = (action.params['unidad'] as any) || 'ud';
         const zoneName = (action.params['zona'] as string) || 'otros';
 
-        // Look up zone by name from DB
         const zones = await zonesRepo.getZonesByUser(userId);
         const matchedZone = zones.find(
           (z) => z.name.toLowerCase() === zoneName.toLowerCase(),

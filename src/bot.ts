@@ -8,7 +8,8 @@ import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelec
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
 import { startMove, handleMovePickProduct, handleMovePickZone, executeMove, handleMoveCancel } from './handlers/move';
-import { processWithAI, safeReply } from './services/deepseek';
+import { processWithAI, safeReply } from './services/gemini';
+import { handleVoiceMessage } from './handlers/voice';
 
 // Extend Context type to include session
 export interface BotContext extends Context {
@@ -135,6 +136,11 @@ export function createBot(): Telegraf<BotContext> {
     await ctx.answerCbQuery().catch(() => {});
   });
 
+  // ── Voice messages ─────────────────────────────────────
+  bot.on('voice', async (ctx) => {
+    await handleVoiceMessage(ctx);
+  });
+
   // ── AI fallback ────────────────────────────────────────
   bot.on(message('text'), async (ctx) => {
     const text = ctx.message.text;
@@ -145,7 +151,7 @@ export function createBot(): Telegraf<BotContext> {
       const response = await processWithAI(text, ctx.from!.id);
       await safeReply(ctx, response, { reply_markup: MAIN_MENU_KEYBOARD });
     } catch (error) {
-      console.error('DeepSeek error:', error);
+      console.error('Gemini error:', error);
       await safeReply(ctx, '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.', {
         reply_markup: MAIN_MENU_KEYBOARD,
       });
