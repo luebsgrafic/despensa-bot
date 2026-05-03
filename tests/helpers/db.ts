@@ -49,9 +49,9 @@ export async function initTestDb(): Promise<void> {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
 
-  // Create unique index for system zones (needed for ON CONFLICT DO NOTHING)
+  // Create unique index for system zones
   await sql`
-    CREATE UNIQUE INDEX idx_zones_name_system
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
     ON zones(name) WHERE user_id IS NULL
   `;
 
@@ -103,7 +103,7 @@ export async function initTestDb(): Promise<void> {
 
 /**
  * Clean all test data between tests.
- * Truncates all tables and reseeds default zones.
+ * Reseeds default zones if missing.
  */
 export async function cleanTestDb(): Promise<void> {
   const sql = getTestSql();
@@ -112,7 +112,21 @@ export async function cleanTestDb(): Promise<void> {
   await sql`DELETE FROM shopping_list`;
   await sql`DELETE FROM products`;
   await sql`DELETE FROM zones WHERE user_id IS NOT NULL`;
-  // Don't delete default zones — they're needed for FK references
+
+  // Re-insert default zones if they were deleted (idempotent)
+  await sql`
+    INSERT INTO zones (user_id, name, emoji)
+    SELECT * FROM (VALUES
+      (NULL::INTEGER, 'nevera', '🧊'),
+      (NULL, 'congelador', '❄️'),
+      (NULL, 'armario_cocina', '🚪'),
+      (NULL, 'despensa', '📦'),
+      (NULL, 'otros', '📌')
+    ) AS v(user_id, name, emoji)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM zones WHERE name = v.name AND user_id IS NULL
+    )
+  `;
 }
 
 /**
