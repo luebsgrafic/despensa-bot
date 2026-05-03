@@ -1,4 +1,5 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
+import { DEFAULT_ZONES, DEFAULT_ZONE_EMOJIS } from '../../src/db/default-zones';
 
 let testSql: NeonQueryFunction<false, false> | null = null;
 let dbInitialized = false;
@@ -56,17 +57,14 @@ export async function initTestDb(): Promise<void> {
       ON zones(name) WHERE user_id IS NULL
     `;
 
-    // Insert exactly 5 default zones (idempotent via unique index)
-    await sql`
-      INSERT INTO zones (user_id, name, emoji)
-      VALUES
-        (NULL, 'nevera', '🧊'),
-        (NULL, 'congelador', '❄️'),
-        (NULL, 'armario_cocina', '🚪'),
-        (NULL, 'despensa', '📦'),
-        (NULL, 'otros', '📌')
-      ON CONFLICT DO NOTHING
-    `;
+    // Insert exactly ${DEFAULT_ZONES.length} default zones
+    for (const name of DEFAULT_ZONES) {
+      await sql`
+        INSERT INTO zones (user_id, name, emoji)
+        VALUES (NULL, ${name}, ${DEFAULT_ZONE_EMOJIS[name]})
+        ON CONFLICT DO NOTHING
+      `;
+    }
 
 
 
@@ -128,17 +126,14 @@ export async function cleanTestDb(): Promise<void> {
     ON zones(name) WHERE user_id IS NULL
   `;
 
-  // Reset default zones: delete all system zones and re-insert exactly 5
+  // Reset default zones: delete all system zones and re-insert exactly DEFAULT_ZONES.length
   await sql`DELETE FROM zones WHERE user_id IS NULL`;
-  await sql`
-    INSERT INTO zones (user_id, name, emoji)
-    VALUES
-      (NULL, 'nevera', '🧊'),
-      (NULL, 'congelador', '❄️'),
-      (NULL, 'armario_cocina', '🚪'),
-      (NULL, 'despensa', '📦'),
-      (NULL, 'otros', '📌')
-  `;
+  for (const name of DEFAULT_ZONES) {
+    await sql`
+      INSERT INTO zones (user_id, name, emoji)
+      VALUES (NULL, ${name}, ${DEFAULT_ZONE_EMOJIS[name]})
+    `;
+  }
 }
 
 /**

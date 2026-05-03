@@ -1,5 +1,6 @@
 import { getSql } from './schema';
 import { Zone } from '../types';
+import { DEFAULT_ZONES, DEFAULT_ZONE_EMOJIS } from './default-zones';
 
 /**
  * Normalize a zone row: ensure user_id is a number (not string from PG).
@@ -129,16 +130,13 @@ export async function getDefaultZones(): Promise<Zone[]> {
 
 export async function ensureDefaultZones(): Promise<void> {
   const sql = getSql();
-  await sql`
-    INSERT INTO zones (user_id, name, emoji)
-    VALUES
-      (NULL, 'nevera', '🧊'),
-      (NULL, 'congelador', '❄️'),
-      (NULL, 'armario_cocina', '🚪'),
-      (NULL, 'despensa', '📦'),
-      (NULL, 'otros', '📌')
-    ON CONFLICT DO NOTHING
-  `;
+  for (const name of DEFAULT_ZONES) {
+    await sql`
+      INSERT INTO zones (user_id, name, emoji)
+      VALUES (NULL, ${name}, ${DEFAULT_ZONE_EMOJIS[name]})
+      ON CONFLICT DO NOTHING
+    `;
+  }
 }
 
 export async function getZoneById(zoneId: number): Promise<Zone | undefined> {

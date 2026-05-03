@@ -1,5 +1,6 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { config } from '../utils/config';
+import { DEFAULT_ZONES, DEFAULT_ZONE_EMOJIS } from './default-zones';
 
 let sql: NeonQueryFunction<false, false>;
 let schemaInitialized = false;
@@ -74,16 +75,13 @@ export async function initializeSchema(): Promise<void> {
   `;
 
   // ── Create default zones (idempotent) ──────────────────
-  await sql`
-    INSERT INTO zones (user_id, name, emoji)
-    VALUES
-      (NULL, 'nevera', '🧊'),
-      (NULL, 'congelador', '❄️'),
-      (NULL, 'armario_cocina', '🚪'),
-      (NULL, 'despensa', '📦'),
-      (NULL, 'otros', '📌')
-    ON CONFLICT DO NOTHING
-  `;
+  for (const name of DEFAULT_ZONES) {
+    await sql`
+      INSERT INTO zones (user_id, name, emoji)
+      VALUES (NULL, ${name}, ${DEFAULT_ZONE_EMOJIS[name]})
+      ON CONFLICT DO NOTHING
+    `;
+  }
 
   // ── Migrate existing products: zone (text) → zone_id (FK) ──
   await sql`
