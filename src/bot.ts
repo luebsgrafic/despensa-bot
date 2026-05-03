@@ -7,6 +7,7 @@ import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handl
 import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelection, handleNoExpiry, handleNoMinStock, handleSave, handleCancel } from './handlers/add';
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
+import { startMove, handleMovePickProduct, handleMovePickZone, executeMove, handleMoveCancel } from './handlers/move';
 import { processWithAI, safeReply } from './services/deepseek';
 
 // Extend Context type to include session
@@ -26,6 +27,7 @@ export function createBot(): Telegraf<BotContext> {
   bot.command('lista', async (ctx) => {
     await showShoppingList(ctx);
   });
+  bot.command('mover', startMove);
 
   // ── Keyboard handlers ──────────────────────────────────
   bot.hears('📦 Ver despensa', showPantry);
@@ -53,6 +55,18 @@ export function createBot(): Telegraf<BotContext> {
       await handleWizardInput(ctx);
       return;
     }
+
+    // Check if user is in consume flow (waiting for amount)
+    const text = ctx.message.text;
+    if (text && /^[\d.,\s]+$/.test(text.trim())) {
+      const chatId = ctx.chat!.id;
+      // consumeState is internal to consume.ts, but we can check if the
+      // message looks like a number and route to handleConsumeAmount
+      // The handleConsumeAmount function checks consumeState internally
+      await handleConsumeAmount(ctx);
+      return;
+    }
+
     return next();
   });
 
@@ -102,6 +116,14 @@ export function createBot(): Telegraf<BotContext> {
         await handleClearChecked(ctx);
       } else if (data === 'shop_close') {
         await handleShoppingClose(ctx);
+      } else if (data.startsWith('move_pick_')) {
+        await handleMovePickProduct(ctx);
+      } else if (data.startsWith('move_zone_')) {
+        await handleMovePickZone(ctx);
+      } else if (data.startsWith('move_confirm_')) {
+        await executeMove(ctx);
+      } else if (data === 'move_cancel') {
+        await handleMoveCancel(ctx);
       }
     } catch (error) {
       console.error('Error handling callback:', error);

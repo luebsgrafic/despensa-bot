@@ -6,6 +6,7 @@ export interface CreateProductInput {
   quantity: number;
   unit: ProductUnit;
   zone: StorageZone;
+  zone_id?: number;
   min_stock?: number | null;
   expiration_date?: string | null;
 }
@@ -13,6 +14,7 @@ export interface CreateProductInput {
 export interface UpdateProductInput {
   quantity?: number;
   zone?: StorageZone;
+  zone_id?: number;
   unit?: ProductUnit;
   min_stock?: number | null;
   expiration_date?: string | null;
@@ -81,6 +83,7 @@ export async function updateProduct(
       quantity = ${quantity},
       unit = ${input.unit ?? existing.unit},
       zone = ${input.zone ?? existing.zone},
+      zone_id = ${input.zone_id !== undefined ? input.zone_id : existing.zone_id},
       min_stock = ${input.min_stock !== undefined ? input.min_stock : existing.min_stock},
       expiration_date = ${input.expiration_date !== undefined ? input.expiration_date : existing.expiration_date},
       is_depleted = ${isDepleted ? 1 : 0},

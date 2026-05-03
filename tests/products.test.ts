@@ -22,6 +22,7 @@ vi.mock('../src/db/schema', () => {
         quantity: values[1],
         unit: values[2],
         zone: values[3],
+        zone_id: null,
         min_stock: values[4],
         expiration_date: values[5],
         is_depleted: values[6],
@@ -58,9 +59,10 @@ vi.mock('../src/db/schema', () => {
         product.quantity = values[1];
         product.unit = values[2];
         product.zone = values[3];
-        product.min_stock = values[4];
-        product.expiration_date = values[5];
-        product.is_depleted = values[6];
+        product.zone_id = values[4];
+        product.min_stock = values[5];
+        product.expiration_date = values[6];
+        product.is_depleted = values[7];
         product.updated_at = new Date().toISOString();
       }
       return product ? [product] : [];

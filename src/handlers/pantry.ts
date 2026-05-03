@@ -1,11 +1,13 @@
 import { Context, Markup } from 'telegraf';
-import { products as productsRepo } from '../db';
-import { STORAGE_ZONES, ZONE_EMOJIS, StorageZone } from '../types';
+import { products as productsRepo, zones as zonesRepo } from '../db';
+import { Zone } from '../types';
 
 const ITEMS_PER_PAGE = 8;
 
 interface PantryState {
-  zone: StorageZone;
+  zoneId: number;
+  zoneName: string;
+  zoneEmoji: string;
   page: number;
 }
 
@@ -13,10 +15,13 @@ interface PantryState {
 const pantryState = new Map<number, PantryState>();
 
 export async function showPantry(ctx: Context): Promise<void> {
-  const buttons = STORAGE_ZONES.map((zone) => [
+  const userId = ctx.from!.id;
+  const zones = await zonesRepo.getZonesByUser(userId);
+
+  const buttons = zones.map((z) => [
     Markup.button.callback(
-      `${ZONE_EMOJIS[zone]} ${capitalize(zone)}`,
-      `pantry_zone_${zone}`,
+      `${z.emoji} ${capitalize(z.name)}`,
+      `pantry_zone_${z.id}`,
     ),
   ]);
 
@@ -29,8 +34,24 @@ export async function showPantry(ctx: Context): Promise<void> {
 
 export async function handlePantryZone(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
-  const zone = ctx.callbackQuery.data.replace('pantry_zone_', '') as StorageZone;
-  pantryState.set(ctx.chat!.id, { zone, page: 0 });
+  const zoneId = parseInt(ctx.callbackQuery.data.replace('pantry_zone_', ''), 10);
+
+  // Get zone info for display
+  const userId = ctx.from!.id;
+  const zones = await zonesRepo.getZonesByUser(userId);
+  const zone = zones.find((z) => z.id === zoneId);
+
+  if (!zone) {
+    await ctx.editMessageText('❌ Zona no encontrada.');
+    return;
+  }
+
+  pantryState.set(ctx.chat!.id, {
+    zoneId,
+    zoneName: zone.name,
+    zoneEmoji: zone.emoji,
+    page: 0,
+  });
   await showZonePage(ctx, zone, 0);
 }
 
@@ -44,16 +65,16 @@ export async function handlePantryPage(ctx: Context): Promise<void> {
   if (data === 'pantry_next') {
     state.page++;
     pantryState.set(chatId, state);
-    await showZonePage(ctx, state.zone, state.page);
+    await showZonePage(ctx, { id: state.zoneId, name: state.zoneName, emoji: state.zoneEmoji } as Zone, state.page);
   } else if (data === 'pantry_prev') {
     state.page--;
     pantryState.set(chatId, state);
-    await showZonePage(ctx, state.zone, state.page);
+    await showZonePage(ctx, { id: state.zoneId, name: state.zoneName, emoji: state.zoneEmoji } as Zone, state.page);
   }
 }
 
-async function showZonePage(ctx: Context, zone: StorageZone, page: number): Promise<void> {
-  const allProducts = await productsRepo.getProductsByZone(zone);
+async function showZonePage(ctx: Context, zone: Zone, page: number): Promise<void> {
+  const allProducts = await productsRepo.getProductsByZone(zone.name as any);
   const activeProducts = allProducts.filter((p) => !p.is_depleted);
   const depletedProducts = allProducts.filter((p) => p.is_depleted);
 
@@ -65,8 +86,8 @@ async function showZonePage(ctx: Context, zone: StorageZone, page: number): Prom
   const start = currentPage * ITEMS_PER_PAGE;
   const pageItems = activeProducts.slice(start, start + ITEMS_PER_PAGE);
 
-  const emoji = ZONE_EMOJIS[zone];
-  let text = `${emoji} *${capitalize(zone)}*\n\n`;
+  const emoji = zone.emoji;
+  let text = `${emoji} *${capitalize(zone.name)}*\n\n`;
 
   if (pageItems.length === 0) {
     text += '_No hay productos en esta zona._';
@@ -116,10 +137,13 @@ async function showZonePage(ctx: Context, zone: StorageZone, page: number): Prom
 }
 
 export async function handlePantryBack(ctx: Context): Promise<void> {
-  const buttons = STORAGE_ZONES.map((zone) => [
+  const userId = ctx.from!.id;
+  const zones = await zonesRepo.getZonesByUser(userId);
+
+  const buttons = zones.map((z) => [
     Markup.button.callback(
-      `${ZONE_EMOJIS[zone]} ${capitalize(zone)}`,
-      `pantry_zone_${zone}`,
+      `${z.emoji} ${capitalize(z.name)}`,
+      `pantry_zone_${z.id}`,
     ),
   ]);
   buttons.push([Markup.button.callback('❌ Cerrar', 'pantry_close')]);

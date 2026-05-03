@@ -2,12 +2,23 @@ export type StorageZone = 'nevera' | 'congelador' | 'armario_cocina' | 'despensa
 
 export type ProductUnit = 'ud' | 'kg' | 'L' | 'g' | 'ml';
 
+export interface Zone {
+  id: number;
+  user_id: number | null;
+  name: string;
+  emoji: string;
+  created_at: string;
+}
+
 export interface Product {
   id: number;
   name: string;
   quantity: number;
   unit: ProductUnit;
   zone: StorageZone;
+  zone_id: number | null;
+  zone_name?: string;
+  zone_emoji?: string;
   min_stock: number | null;
   expiration_date: string | null; // ISO date string
   is_depleted: boolean;
@@ -50,6 +61,7 @@ export interface WizardSession {
   data: {
     name?: string;
     zone?: StorageZone;
+    zone_id?: number;
     quantity?: number;
     unit?: ProductUnit;
     expiration_date?: string | null;
@@ -60,6 +72,13 @@ export interface WizardSession {
 // Session data stored per user
 export interface SessionData {
   wizard: WizardSession;
+}
+
+// Move wizard state
+export interface MoveState {
+  productId: number;
+  productName: string;
+  currentZoneId: number | null;
 }
 
 export const STORAGE_ZONES: StorageZone[] = [

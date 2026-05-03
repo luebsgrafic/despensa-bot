@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { config } from '../utils/config';
-import { products as productsRepo, shopping as shoppingRepo } from '../db';
+import { products as productsRepo, shopping as shoppingRepo, zones as zonesRepo } from '../db';
 
 const client = new OpenAI({
   baseURL: config.deepseekBaseUrl,
@@ -48,9 +48,11 @@ export async function processWithAI(
   const allProducts = await productsRepo.getAllProducts();
   const activeProducts = allProducts.filter((p) => !p.is_depleted);
   const shoppingItems = await shoppingRepo.getUncheckedItems();
+  const zones = await zonesRepo.getZonesByUser(userId);
 
   const inventorySummary = buildInventorySummary(activeProducts);
   const shoppingSummary = buildShoppingSummary(shoppingItems);
+  const zonesList = zones.map((z) => z.name).join(', ');
 
   const systemPrompt = `Eres un asistente de despensa y cocina. Tu función es ayudar a una familia a gestionar su inventario.
 
@@ -76,7 +78,7 @@ REGLAS IMPORTANTES:
 
 4. Si solo es una pregunta normal, responde sin ACCION.
 
-Zonas disponibles: nevera, congelador, armario_cocina, despensa, otros
+Zonas disponibles: ${zonesList}
 Unidades disponibles: ud, kg, L, g, ml
 
 Responde en español, tono amigable, máximo 200 tokens.`;
@@ -144,18 +146,28 @@ async function executeAction(action: AIAction, userId: number): Promise<string> 
         const name = action.params['nombre'] || action.params['producto'] || 'Producto';
         const quantity = parseFloat(action.params['cantidad']) || 1;
         const unit = (action.params['unidad'] as any) || 'ud';
-        const zone = (action.params['zona'] as any) || 'otros';
+        const zoneName = (action.params['zona'] as string) || 'otros';
+
+        // Look up zone by name from DB
+        const zones = await zonesRepo.getZonesByUser(userId);
+        const matchedZone = zones.find(
+          (z) => z.name.toLowerCase() === zoneName.toLowerCase(),
+        );
+        const zoneId = matchedZone?.id ?? zones.find((z) => z.name === 'otros')?.id ?? null;
 
         await productsRepo.createProduct({
           name,
           quantity,
           unit: ['ud', 'kg', 'L', 'g', 'ml'].includes(unit) ? unit : 'ud',
-          zone: ['nevera', 'congelador', 'armario_cocina', 'despensa', 'otros'].includes(zone)
-            ? zone
-            : 'otros',
+          zone: 'otros',
+          zone_id: zoneId ?? undefined,
         });
 
-        return `✅ He añadido ${name} (${quantity}${unit}) a la despensa en ${zone}.\n\n${action.message || '¿Necesitas algo más?'}`;
+        const zoneDisplay = matchedZone
+          ? `${matchedZone.emoji} ${matchedZone.name}`
+          : zoneName;
+
+        return `✅ He añadido ${name} (${quantity}${unit}) a la despensa en ${zoneDisplay}.\n\n${action.message || '¿Necesitas algo más?'}`;
       }
 
       case 'add_shopping': {

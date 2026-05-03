@@ -53,8 +53,48 @@ async function initializeSchema(): Promise<void> {
     )
   `;
 
+  // ── Zones table (customizable zones per user) ──────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS zones (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT,
+      name TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '📦',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  // ── Add zone_id to products (nullable, FK) ────────────
+  await sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS zone_id INTEGER REFERENCES zones(id)
+  `;
+
+  // ── Create default zones (idempotent) ──────────────────
+  await sql`
+    INSERT INTO zones (user_id, name, emoji)
+    VALUES
+      (NULL, 'nevera', '🧊'),
+      (NULL, 'congelador', '❄️'),
+      (NULL, 'armario_cocina', '🚪'),
+      (NULL, 'despensa', '📦'),
+      (NULL, 'otros', '📌')
+    ON CONFLICT DO NOTHING
+  `;
+
+  // ── Migrate existing products: zone (text) → zone_id (FK) ──
+  await sql`
+    UPDATE products p
+    SET zone_id = (SELECT id FROM zones WHERE name = p.zone AND user_id IS NULL)
+    WHERE p.zone_id IS NULL AND p.zone IS NOT NULL
+  `;
+
+  // ── Indexes ────────────────────────────────────────────
   await sql`
     CREATE INDEX IF NOT EXISTS idx_products_zone ON products(zone)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_products_zone_id ON products(zone_id)
   `;
 
   await sql`
@@ -67,5 +107,13 @@ async function initializeSchema(): Promise<void> {
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_movement_log_product ON movement_log(product_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_zones_user_id ON zones(user_id)
+  `;
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system ON zones(name) WHERE user_id IS NULL
   `;
 }

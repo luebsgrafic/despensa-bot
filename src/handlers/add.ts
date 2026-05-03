@@ -1,7 +1,6 @@
 import { Context, Markup } from 'telegraf';
-import { products as productsRepo, movements } from '../db';
+import { products as productsRepo, movements, zones as zonesRepo } from '../db';
 import {
-  STORAGE_ZONES,
   PRODUCT_UNITS,
   ZONE_EMOJIS,
   StorageZone,
@@ -58,10 +57,13 @@ export async function handleWizardInput(ctx: Context): Promise<void> {
 }
 
 async function askZone(ctx: Context): Promise<void> {
-  const buttons = STORAGE_ZONES.map((zone) => [
+  const userId = ctx.from!.id;
+  const zones = await zonesRepo.getZonesByUser(userId);
+
+  const buttons = zones.map((z) => [
     Markup.button.callback(
-      `${ZONE_EMOJIS[zone]} ${capitalize(zone)}`,
-      `wizard_zone_${zone}`,
+      `${z.emoji} ${capitalize(z.name)}`,
+      `wizard_zone_${z.id}`,
     ),
   ]);
 
@@ -73,17 +75,25 @@ async function askZone(ctx: Context): Promise<void> {
 export async function handleZoneSelection(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const session = (ctx as any).session as SessionData;
-  const zone = ctx.callbackQuery.data.replace('wizard_zone_', '') as StorageZone;
+  const zoneId = parseInt(ctx.callbackQuery.data.replace('wizard_zone_', ''), 10);
 
-  session.wizard.data.zone = zone;
+  // Get zone info for display
+  const zones = await zonesRepo.getZonesByUser(ctx.from!.id);
+  const selectedZone = zones.find((z) => z.id === zoneId);
+
+  session.wizard.data.zone_id = zoneId;
   session.wizard.step = 'ask_quantity_unit';
 
   const buttons = PRODUCT_UNITS.map((unit) => [
     Markup.button.callback(UNIT_LABELS[unit], `wizard_unit_${unit}`),
   ]);
 
+  const zoneDisplay = selectedZone
+    ? `${selectedZone.emoji} ${capitalize(selectedZone.name)}`
+    : 'Seleccionada';
+
   await ctx.editMessageText(
-    `✅ Zona: ${ZONE_EMOJIS[zone]} ${capitalize(zone)}\n\n` +
+    `✅ Zona: ${zoneDisplay}\n\n` +
       '🔢 ¿Qué cantidad y unidad? (ej: 2 kg, 500 g, 3 ud)\n\n' +
       'O selecciona la unidad con los botones y escribe solo el número:',
     {
@@ -244,10 +254,20 @@ async function showConfirmation(
   const minStockText =
     d.min_stock !== null ? `${d.min_stock} ${d.unit}` : 'Sin mínimo';
 
+  // Get zone display info
+  let zoneDisplay = 'Seleccionada';
+  if (d.zone_id) {
+    const zones = await zonesRepo.getZonesByUser(ctx.from!.id);
+    const zone = zones.find((z) => z.id === d.zone_id);
+    if (zone) {
+      zoneDisplay = `${zone.emoji} ${capitalize(zone.name)}`;
+    }
+  }
+
   const summary =
     `📋 *Resumen del producto*\n\n` +
     `• Nombre: ${d.name}\n` +
-    `• Zona: ${ZONE_EMOJIS[d.zone!]} ${capitalize(d.zone!)}\n` +
+    `• Zona: ${zoneDisplay}\n` +
     `• Cantidad: ${d.quantity} ${d.unit}\n` +
     `• Caducidad: ${expiryText}\n` +
     `• Stock mínimo: ${minStockText}\n\n` +
@@ -268,18 +288,26 @@ export async function handleSave(ctx: Context): Promise<void> {
   const session = (ctx as any).session as SessionData;
   const d = session.wizard.data;
 
-  if (!d.name || !d.zone || d.quantity === undefined || !d.unit) {
+  if (!d.name || !d.zone_id || d.quantity === undefined || !d.unit) {
     await ctx.editMessageText('❌ Faltan datos. Empieza de nuevo con /start');
     session.wizard = { step: 'idle', data: {} };
     return;
   }
 
   try {
+    // Get zone info for display
+    const zones = await zonesRepo.getZonesByUser(ctx.from!.id);
+    const zone = zones.find((z) => z.id === d.zone_id);
+    const zoneDisplay = zone
+      ? `${zone.emoji} ${capitalize(zone.name)}`
+      : 'desconocida';
+
     const product = await productsRepo.createProduct({
       name: d.name,
       quantity: d.quantity,
       unit: d.unit,
-      zone: d.zone,
+      zone: 'otros', // legacy fallback
+      zone_id: d.zone_id,
       min_stock: d.min_stock,
       expiration_date: d.expiration_date,
     });
@@ -288,12 +316,12 @@ export async function handleSave(ctx: Context): Promise<void> {
       product.id,
       'added',
       null,
-      `${d.quantity} ${d.unit} en ${d.zone}`,
+      `${d.quantity} ${d.unit} en ${zoneDisplay}`,
       ctx.from!.id,
     );
 
     await ctx.editMessageText(
-      `✅ *${d.name}* añadido correctamente a ${ZONE_EMOJIS[d.zone]} ${capitalize(d.zone)}.\n\n` +
+      `✅ *${d.name}* añadido correctamente a ${zoneDisplay}.\n\n` +
         `Cantidad: ${d.quantity} ${d.unit}` +
         (d.expiration_date
           ? `\nCaduca: ${formatDate(d.expiration_date)}`
