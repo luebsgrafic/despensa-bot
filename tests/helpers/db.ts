@@ -74,7 +74,7 @@ export async function initTestDb(): Promise<void> {
     zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
     zone_id INTEGER REFERENCES zones(id),
     min_stock REAL,
-    expiration_date DATE,
+    expiration_date TEXT,
     is_depleted INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -124,11 +124,17 @@ export function hasTestDb(): boolean {
 
 /**
  * Get the ID of a default zone by name.
- * Returns 0 if test DB is not configured (caller should skip).
+ * Throws if the zone is not found — prevents silent zone_id=0 bugs.
  */
 export async function getDefaultZoneId(name: string): Promise<number> {
   if (!hasTestDb()) return 0;
   const sql = getTestSql();
   const rows = await sql`SELECT id FROM zones WHERE name = ${name} AND user_id IS NULL`;
-  return (rows as any[])[0]?.id ?? 0;
+  const id = (rows as any[])[0]?.id;
+  if (!id) {
+    throw new Error(
+      `Default zone "${name}" not found. Ensure initTestDb() has been called and zones are seeded.`,
+    );
+  }
+  return id;
 }
