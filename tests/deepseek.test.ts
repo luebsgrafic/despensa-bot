@@ -3,6 +3,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Import safeReply directly — it's a pure function that takes (ctx, text)
 import { safeReply } from '../src/services/deepseek';
 
+describe('processWithAI — empty response from DeepSeek', () => {
+  it('safeReply should use fallback when message.content is empty (simulates reasoning_tokens=300, completion_tokens=300, content="")', async () => {
+    const mockCtx = { reply: vi.fn().mockResolvedValue(undefined) };
+
+    // Simulate: DeepSeek returns empty content because all tokens went to reasoning
+    await safeReply(mockCtx, '');
+
+    expect(mockCtx.reply).toHaveBeenCalledWith(
+      'No he podido interpretar bien el mensaje. ¿Puedes decirme el producto, cantidad y zona? Ejemplo: añadir 2 kg de pollo en congelador.',
+    );
+    // Verify it was NOT called with empty string
+    expect(mockCtx.reply).not.toHaveBeenCalledWith('');
+  });
+});
+
 describe('safeReply', () => {
   let mockCtx: any;
 

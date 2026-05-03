@@ -88,7 +88,7 @@ Responde en español, tono amigable, máximo 200 tokens.`;
       { role: 'user', content: userMessage },
     ],
     max_tokens: config.deepseekMaxTokens,
-    temperature: 0.3,
+    temperature: 0.7,
   });
 
   const rawContent = completion.choices[0]?.message?.content;
@@ -96,8 +96,11 @@ Responde en español, tono amigable, máximo 200 tokens.`;
 
   // Log if DeepSeek returned empty
   if (!response) {
+    const usage = completion.usage;
     console.warn('[DeepSeek] Empty response received');
-    console.warn('[DeepSeek] Status:', completion.usage || 'no usage data');
+    console.warn('[DeepSeek] Model:', config.deepseekModel);
+    console.warn('[DeepSeek] Usage:', JSON.stringify(usage));
+    console.warn('[DeepSeek] Finish reason:', completion.choices[0]?.finish_reason);
     return '';
   }
 

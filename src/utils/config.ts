@@ -23,7 +23,7 @@ export const config = {
 
   deepseekModel: 'deepseek-v4-flash',
   deepseekBaseUrl: 'https://api.deepseek.com',
-  deepseekMaxTokens: 300,
+  deepseekMaxTokens: 800,
 
   alertHour: 9,
   alertMinute: 0,
