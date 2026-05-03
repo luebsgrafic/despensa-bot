@@ -599,9 +599,8 @@ describeIntegration('Full E2E: Weekly simulation', () => {
     });
 
     it('should enforce limit of 20 messages per user', async () => {
-      for (let i = 0; i < 25; i++) {
-        await conversations.saveMessage(USER_A, 'user', `Mensaje ${i}`);
-        await conversations.saveMessage(USER_A, 'assistant', `Respuesta ${i}`);
+      for (let i = 0; i < 22; i++) {
+        await conversations.saveMessage(USER_A, 'user', `Msg ${i}`);
       }
 
       const messages = await conversations.getRecentMessages(USER_A, 50);

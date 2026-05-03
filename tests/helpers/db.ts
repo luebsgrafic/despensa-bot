@@ -37,6 +37,7 @@ export async function initTestDb(): Promise<void> {
 
   try {
     // Drop all tables to ensure clean schema
+    await sql`DROP TABLE IF EXISTS conversations CASCADE`;
     await sql`DROP TABLE IF EXISTS movement_log CASCADE`;
     await sql`DROP TABLE IF EXISTS shopping_list CASCADE`;
     await sql`DROP TABLE IF EXISTS products CASCADE`;
