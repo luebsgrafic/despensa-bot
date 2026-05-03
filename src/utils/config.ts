@@ -21,6 +21,7 @@ export const config = {
   geminiApiKey: requireEnv('GEMINI_API_KEY'),
   databaseUrl: requireEnv('DATABASE_URL'),
   databaseUrlTest: process.env['DATABASE_URL_TEST'] || '',
+  mem0ApiKey: process.env['MEM0_API_KEY'] || '',
 
   geminiModel: 'gemini-1.5-flash-8b',
   geminiMaxTokens: 800,

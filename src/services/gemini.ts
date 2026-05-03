@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../utils/config';
 import { products as productsRepo, shopping as shoppingRepo, zones as zonesRepo, conversations as conversationsRepo } from '../db';
 import { ConversationMessage } from '../db/conversations';
+import { addToMemory, getRelevantMemories } from './memory';
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const model = genAI.getGenerativeModel({ model: config.geminiModel });
@@ -53,7 +54,16 @@ export async function processWithAI(
   const shoppingSummary = buildShoppingSummary(shoppingItems);
   const zonesList = zones.map((z) => z.name).join(', ');
 
+  // Load relevant memories (optional — never blocks)
+  let memories = '';
+  try {
+    memories = await getRelevantMemories(userId, userMessage);
+  } catch {
+    // mem0 failure is non-critical
+  }
+
   const systemPrompt = `Eres un asistente de despensa y cocina. Tu función es ayudar a una familia a gestionar su inventario.
+${memories ? `\nLo que sabes de este usuario:\n${memories}\n` : ''}
 
 INVENTARIO ACTUAL:
 ${inventorySummary || 'Vacío'}
@@ -105,6 +115,16 @@ Responde en español, tono amigable, máximo 200 tokens.`;
       await conversationsRepo.saveMessage(userId, 'assistant', response);
     } catch (err) {
       console.warn('[Gemini] Failed to save conversation:', err);
+    }
+
+    // Save to mem0 (optional — never blocks)
+    try {
+      await addToMemory(userId, [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: response },
+      ]);
+    } catch {
+      // mem0 failure is non-critical
     }
 
     const action = parseAction(response);

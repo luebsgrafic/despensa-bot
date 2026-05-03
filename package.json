@@ -25,6 +25,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "mem0ai": "^3.0.2",
     "node-cron": "^4.2.1",
     "telegraf": "^4.16.3"
   },
