@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getTestSql, initTestDb, cleanTestDb, getDefaultZoneId, hasTestDb } from '../helpers/db';
-import { products, zones, shopping, movements } from '../../src/db';
+import { products, zones, shopping, movements, conversations } from '../../src/db';
 
 const USER_A = 111111;
 const USER_B = 222222;
@@ -571,6 +571,62 @@ describeIntegration('Full E2E: Weekly simulation', () => {
     });
   });
 
+  // ── CONVERSATIONS ────────────────────────────────────────
+
+  describe('Conversations', () => {
+    it('should save a message and retrieve it', async () => {
+      await conversations.saveMessage(USER_A, 'user', 'Hola');
+      await conversations.saveMessage(USER_A, 'assistant', '¡Hola! ¿En qué puedo ayudarte?');
+
+      const messages = await conversations.getRecentMessages(USER_A);
+      expect(messages.length, 'Should have 2 messages').toBe(2);
+      expect(messages[0].role, 'First should be user').toBe('user');
+      expect(messages[0].content, 'First content').toBe('Hola');
+      expect(messages[1].role, 'Second should be assistant').toBe('assistant');
+      expect(messages[1].content, 'Second content').toBe('¡Hola! ¿En qué puedo ayudarte?');
+    });
+
+    it('should respect order (oldest first)', async () => {
+      await conversations.saveMessage(USER_A, 'user', 'Primero');
+      await conversations.saveMessage(USER_A, 'assistant', 'Segundo');
+      await conversations.saveMessage(USER_A, 'user', 'Tercero');
+
+      const messages = await conversations.getRecentMessages(USER_A, 5);
+      expect(messages.length, 'Should have 3 messages').toBe(3);
+      expect(messages[0].content, 'First chronologically').toBe('Primero');
+      expect(messages[1].content, 'Second chronologically').toBe('Segundo');
+      expect(messages[2].content, 'Third chronologically').toBe('Tercero');
+    });
+
+    it('should enforce limit of 20 messages per user', async () => {
+      for (let i = 0; i < 25; i++) {
+        await conversations.saveMessage(USER_A, 'user', `Mensaje ${i}`);
+        await conversations.saveMessage(USER_A, 'assistant', `Respuesta ${i}`);
+      }
+
+      const messages = await conversations.getRecentMessages(USER_A, 50);
+      expect(messages.length, 'Should have at most 20 messages').toBeLessThanOrEqual(20);
+    });
+
+    it('should isolate conversations between users', async () => {
+      await conversations.saveMessage(USER_A, 'user', 'Soy A');
+      await conversations.saveMessage(USER_B, 'user', 'Soy B');
+
+      const msgsA = await conversations.getRecentMessages(USER_A);
+      const msgsB = await conversations.getRecentMessages(USER_B);
+
+      expect(msgsA.length, 'User A has 1 message').toBe(1);
+      expect(msgsA[0].content, 'User A content').toBe('Soy A');
+      expect(msgsB.length, 'User B has 1 message').toBe(1);
+      expect(msgsB[0].content, 'User B content').toBe('Soy B');
+    });
+
+    it('should return empty array for user with no history', async () => {
+      const messages = await conversations.getRecentMessages(99999);
+      expect(messages.length, 'No messages for unknown user').toBe(0);
+    });
+  });
+
   // ── CLEANUP ─────────────────────────────────────────────
 
   describe('Cleanup', () => {
@@ -583,6 +639,7 @@ describeIntegration('Full E2E: Weekly simulation', () => {
 
       // Clean
       const sql = getTestSql();
+      await sql`DELETE FROM conversations`;
       await sql`DELETE FROM movement_log`;
       await sql`DELETE FROM shopping_list`;
       await sql`DELETE FROM products`;
@@ -593,6 +650,9 @@ describeIntegration('Full E2E: Weekly simulation', () => {
       const zonesLeft = await sql`SELECT COUNT(*) as c FROM zones WHERE user_id IS NOT NULL`;
       const shoppingLeft = await sql`SELECT COUNT(*) as c FROM shopping_list`;
       const movementsLeft = await sql`SELECT COUNT(*) as c FROM movement_log`;
+      const conversationsLeft = await sql`SELECT COUNT(*) as c FROM conversations`;
+
+      expect(Number(conversationsLeft[0].c), 'No conversations left').toBe(0);
 
       expect(Number(productsLeft[0].c), 'No products left').toBe(0);
       expect(Number(zonesLeft[0].c), 'No custom zones left').toBe(0);

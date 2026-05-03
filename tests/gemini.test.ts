@@ -1,6 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { safeReply } from '../src/services/gemini';
+// Expose mock functions for assertions
+const mockGetRecentMessages = vi.fn();
+const mockSaveMessage = vi.fn();
+const mockStartChatFn = vi.fn();
+
+vi.mock('../src/db', () => ({
+  products: {
+    getAllProducts: vi.fn().mockResolvedValue([]),
+  },
+  shopping: {
+    getUncheckedItems: vi.fn().mockResolvedValue([]),
+  },
+  zones: {
+    getZonesByUser: vi.fn().mockResolvedValue([]),
+  },
+  conversations: {
+    getRecentMessages: (...args: any[]) => mockGetRecentMessages(...args),
+    saveMessage: (...args: any[]) => mockSaveMessage(...args),
+  },
+}));
+
+vi.mock('@google/generative-ai', () => {
+  class GoogleGenerativeAI {
+    constructor(_apiKey: string) {}
+    getGenerativeModel() {
+      return {
+        startChat: (...args: any[]) => {
+          mockStartChatFn(...args);
+          return {
+            sendMessage: async () => ({
+              response: { text: () => 'Respuesta de prueba' },
+            }),
+          };
+        },
+        generateContent: vi.fn(),
+      };
+    }
+  }
+  return { GoogleGenerativeAI };
+});
+
+import { safeReply, processWithAI } from '../src/services/gemini';
 
 describe('safeReply', () => {
   let mockCtx: any;
@@ -92,5 +133,65 @@ describe('safeReply', () => {
     await safeReply(mockCtx, '  mensaje con espacios  ');
     const callArgs = mockCtx.reply.mock.calls[0];
     expect(callArgs[0]).toBe('mensaje con espacios');
+  });
+});
+
+describe('processWithAI — history handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetRecentMessages.mockResolvedValue([]);
+  });
+
+  it('should load recent messages from conversations', async () => {
+    mockGetRecentMessages.mockResolvedValue([
+      { id: 1, user_id: 123, role: 'user', content: 'Hola', created_at: new Date().toISOString() },
+      { id: 2, user_id: 123, role: 'assistant', content: '¿En qué puedo ayudarte?', created_at: new Date().toISOString() },
+    ]);
+
+    await processWithAI('Quiero añadir leche', 123);
+
+    expect(mockGetRecentMessages).toHaveBeenCalledWith(123);
+    expect(mockSaveMessage).toHaveBeenCalled();
+  });
+
+  it('should pass history to startChat', async () => {
+    mockGetRecentMessages.mockResolvedValue([
+      { id: 1, user_id: 123, role: 'user', content: 'Hola', created_at: new Date().toISOString() },
+    ]);
+
+    await processWithAI('Añade leche', 123);
+
+    // Verify startChat was called with history containing the past message
+    const startChatCall = mockStartChatFn.mock.calls[0]?.[0];
+    expect(startChatCall).toBeDefined();
+    expect(startChatCall.history).toBeDefined();
+    expect(startChatCall.history.length).toBe(1);
+    expect(startChatCall.history[0].role).toBe('user');
+    expect(startChatCall.history[0].parts[0].text).toBe('Hola');
+  });
+
+  it('should save both user message and bot response', async () => {
+    await processWithAI('Dime algo', 456);
+
+    expect(mockSaveMessage).toHaveBeenCalledTimes(2);
+    expect(mockSaveMessage).toHaveBeenCalledWith(456, 'user', 'Dime algo');
+    expect(mockSaveMessage).toHaveBeenCalledWith(456, 'assistant', 'Respuesta de prueba');
+  });
+
+  it('should work with empty history', async () => {
+    mockGetRecentMessages.mockResolvedValue([]);
+
+    const result = await processWithAI('Hola', 789);
+
+    expect(result).toBeTruthy();
+    expect(mockSaveMessage).toHaveBeenCalled();
+  });
+
+  it('should not crash if history fails to load', async () => {
+    mockGetRecentMessages.mockRejectedValue(new Error('DB error'));
+
+    // Should still return gracefully
+    const result = await processWithAI('Hola', 789);
+    expect(result).toBeTruthy();
   });
 });

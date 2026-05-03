@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../utils/config';
-import { products as productsRepo, shopping as shoppingRepo, zones as zonesRepo } from '../db';
+import { products as productsRepo, shopping as shoppingRepo, zones as zonesRepo, conversations as conversationsRepo } from '../db';
+import { ConversationMessage } from '../db/conversations';
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const model = genAI.getGenerativeModel({ model: config.geminiModel });
@@ -41,6 +42,12 @@ export async function processWithAI(
   const activeProducts = allProducts.filter((p) => !p.is_depleted);
   const shoppingItems = await shoppingRepo.getUncheckedItems();
   const zones = await zonesRepo.getZonesByUser(userId);
+  let history: ConversationMessage[] = [];
+  try {
+    history = await conversationsRepo.getRecentMessages(userId);
+  } catch (err) {
+    console.warn('[Gemini] Failed to load conversation history:', err);
+  }
 
   const inventorySummary = buildInventorySummary(activeProducts);
   const shoppingSummary = buildShoppingSummary(shoppingItems);
@@ -78,6 +85,10 @@ Responde en español, tono amigable, máximo 200 tokens.`;
   try {
     const chat = model.startChat({
       systemInstruction: { role: 'user', parts: [{ text: systemPrompt }] },
+      history: history.map((m) => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.content }],
+      })),
     });
 
     const result = await chat.sendMessage(userMessage);
@@ -86,6 +97,14 @@ Responde en español, tono amigable, máximo 200 tokens.`;
     if (!response) {
       console.warn('[Gemini] Empty response received');
       return '';
+    }
+
+    // Save user message and bot response to conversation history
+    try {
+      await conversationsRepo.saveMessage(userId, 'user', userMessage);
+      await conversationsRepo.saveMessage(userId, 'assistant', response);
+    } catch (err) {
+      console.warn('[Gemini] Failed to save conversation:', err);
     }
 
     const action = parseAction(response);
@@ -175,10 +194,19 @@ Unidades disponibles: ud, kg, L, g, ml`;
 
     // Process the intent using the same action pipeline
     const actionResponse = await processIntentAsAction(intent, entities, transcription, userId);
+    const fullResponse = `🎤 Escuché: "${transcription}"\n\n${actionResponse}`;
+
+    // Save to conversation history
+    try {
+      await conversationsRepo.saveMessage(userId, 'user', transcription);
+      await conversationsRepo.saveMessage(userId, 'assistant', fullResponse);
+    } catch (err) {
+      console.warn('[Gemini Audio] Failed to save conversation:', err);
+    }
 
     return {
       transcription,
-      response: `🎤 Escuché: "${transcription}"\n\n${actionResponse}`,
+      response: fullResponse,
     };
   } catch (error: any) {
     console.error('[Gemini Audio] Error:', error?.message || error);

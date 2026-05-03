@@ -58,6 +58,17 @@ export async function initializeSchema(): Promise<void> {
     )
   `;
 
+  // ── Conversations table (chat history per user) ────────
+  await sql`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
   // ── Zones table (customizable zones per user) ──────────
   await sql`
     CREATE TABLE IF NOT EXISTS zones (
@@ -138,6 +149,10 @@ export async function initializeSchema(): Promise<void> {
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_movement_log_product ON movement_log(product_id)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id, created_at DESC)
   `;
 
   await sql`

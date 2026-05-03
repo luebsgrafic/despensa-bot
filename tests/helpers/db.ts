@@ -101,6 +101,14 @@ export async function initTestDb(): Promise<void> {
       user_id BIGINT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`;
+
+    await sql`CREATE TABLE conversations (
+      id SERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`;
   } catch (error) {
     // Reset flag so next call retries
     dbInitialized = false;
@@ -115,6 +123,7 @@ export async function initTestDb(): Promise<void> {
 export async function cleanTestDb(): Promise<void> {
   const sql = getTestSql();
   // Delete in order that respects FK constraints
+  await sql`DELETE FROM conversations`;
   await sql`DELETE FROM movement_log`;
   await sql`DELETE FROM shopping_list`;
   await sql`DELETE FROM products`;
