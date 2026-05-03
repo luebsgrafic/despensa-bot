@@ -271,18 +271,10 @@ describeIntegration('Full E2E: Weekly simulation', () => {
     });
 
     it('should list default zones plus custom user zones', async () => {
-      const sql = getTestSql();
-      const beforeZones = await sql`SELECT id, name, user_id FROM zones ORDER BY id`;
-      console.log('[DEBUG listZones] before create:', JSON.stringify(beforeZones));
-
       await zones.createZone(USER_A, 'vinos', '🍷');
       await zones.createZone(USER_A, 'reposteria', '🧁');
 
-      const afterZones = await sql`SELECT id, name, user_id FROM zones ORDER BY id`;
-      console.log('[DEBUG listZones] after create:', JSON.stringify(afterZones));
-
       const userZones = await zones.getZonesByUser(USER_A);
-      console.log('[DEBUG listZones] getZonesByUser result:', JSON.stringify(userZones));
       expect(userZones.length, '5 defaults + 2 custom = 7').toBe(7);
 
       const names = userZones.map((z) => z.name);
@@ -610,8 +602,6 @@ describeIntegration('Full E2E: Weekly simulation', () => {
 
       // Default zones should still exist
       const defaultZones = await sql`SELECT COUNT(*) as c FROM zones WHERE user_id IS NULL`;
-      const debugZones = await sql`SELECT id, name, user_id FROM zones WHERE user_id IS NULL ORDER BY id`;
-      console.log('[DEBUG cleanup] default zones:', JSON.stringify(debugZones));
       expect(Number(defaultZones[0].c), '5 default zones remain').toBe(5);
     });
   });
