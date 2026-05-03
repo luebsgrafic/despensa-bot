@@ -31,13 +31,15 @@ vi.mock('../src/db/schema', () => {
   const mockSql = (_strings: TemplateStringsArray, ...values: any[]) => {
     const query = reconstructQuery(_strings, values);
 
-    // Upsert: SELECT for existing product by name + zone_id
+    // Upsert: SELECT for existing product by name + zone_id + unit
     if (query.includes('LOWER(name) = LOWER(') && query.includes('zone_id IS NOT DISTINCT FROM')) {
       const searchName = String(values[0]).toLowerCase();
       const searchZoneId = values[1];
+      const searchUnit = values.length > 2 ? values[2] : undefined;
       const found = state.products.find((p: any) =>
         p.name.toLowerCase() === searchName &&
-        (p.zone_id === searchZoneId || (p.zone_id === null && searchZoneId === null))
+        (p.zone_id === searchZoneId || (p.zone_id === null && searchZoneId === null)) &&
+        (searchUnit === undefined || p.unit === searchUnit)
       );
       return found ? [found] : [];
     }
@@ -119,14 +121,22 @@ vi.mock('../src/db/schema', () => {
     if (query.includes('UPDATE products SET')) {
       const product = state.products.find((p: any) => p.id === values[values.length - 1]);
       if (product) {
-        product.name = values[0];
-        product.quantity = values[1];
-        product.unit = values[2];
-        product.zone = values[3];
-        product.zone_id = values[4];
-        product.min_stock = values[5];
-        product.expiration_date = values[6];
-        product.is_depleted = values[7];
+        if (query.includes('name =')) {
+          // From updateProduct() — full field list
+          product.name = values[0];
+          product.quantity = values[1];
+          product.unit = values[2];
+          product.zone = values[3];
+          product.zone_id = values[4];
+          product.min_stock = values[5];
+          product.expiration_date = values[6];
+          product.is_depleted = values[7];
+        } else {
+          // From createProduct() upsert — only quantity, unit, is_depleted
+          product.quantity = values[0];
+          product.unit = values[1];
+          product.is_depleted = values[2];
+        }
         product.updated_at = new Date().toISOString();
       }
       return product ? [product] : [];
@@ -227,6 +237,62 @@ describe('Products Repository', () => {
       expect(product.name).toBe('Sal');
       expect(product.min_stock).toBeNull();
       expect(product.expiration_date).toBeNull();
+    });
+
+    it('should upsert when creating same product twice — sum quantities', async () => {
+      await products.createProduct({
+        name: 'Galletas', quantity: 2, unit: 'ud', zone: 'nevera',
+      });
+
+      const p2 = await products.createProduct({
+        name: 'Galletas', quantity: 3, unit: 'ud', zone: 'nevera',
+      });
+
+      const all = await products.getAllProducts();
+      expect(all).toHaveLength(1);
+      expect(all[0].quantity).toBe(5);
+      expect(all[0].id).toBe(p2.id);
+    });
+
+    it('should NOT upsert when same name but different zone', async () => {
+      await products.createProduct({
+        name: 'Arroz', quantity: 1, unit: 'kg', zone: 'nevera', zone_id: 1,
+      });
+
+      await products.createProduct({
+        name: 'Arroz', quantity: 2, unit: 'kg', zone: 'despensa', zone_id: 2,
+      });
+
+      const all = await products.getAllProducts();
+      expect(all).toHaveLength(2);
+    });
+
+    it('should upsert case-insensitively — "Leche" and "leche" fuse', async () => {
+      await products.createProduct({
+        name: 'Leche', quantity: 2, unit: 'L', zone: 'nevera',
+      });
+
+      const p2 = await products.createProduct({
+        name: 'leche', quantity: 1, unit: 'L', zone: 'nevera',
+      });
+
+      const all = await products.getAllProducts();
+      expect(all).toHaveLength(1);
+      expect(all[0].quantity).toBe(3);
+      expect(all[0].id).toBe(p2.id);
+    });
+
+    it('should return updated product with correct summed quantity after upsert', async () => {
+      await products.createProduct({
+        name: 'Huevos', quantity: 6, unit: 'ud', zone: 'nevera',
+      });
+
+      const updated = await products.createProduct({
+        name: 'Huevos', quantity: 6, unit: 'ud', zone: 'nevera',
+      });
+
+      expect(updated.quantity).toBe(12);
+      expect(updated.is_depleted).toBe(0);
     });
   });
 

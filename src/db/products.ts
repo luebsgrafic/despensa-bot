@@ -111,11 +111,12 @@ export async function searchProducts(query: string): Promise<Product[]> {
 export async function createProduct(input: CreateProductInput): Promise<Product> {
   const sql = getSql();
 
-  // Upsert: check for existing product with same name (case insensitive) + zone_id
+  // Upsert: check for existing product with same name (case insensitive) + zone_id + unit
   const existing = await sql`
     SELECT * FROM products
     WHERE LOWER(name) = LOWER(${input.name})
       AND zone_id IS NOT DISTINCT FROM ${input.zone_id ?? null}
+      AND unit = ${input.unit}
     LIMIT 1
   `;
   const existingProduct = (existing as unknown as Product[])[0];
@@ -137,22 +138,53 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
   }
 
   // No existing product — INSERT
-  const rows = await sql`
-    INSERT INTO products (name, quantity, unit, zone, zone_id, min_stock, expiration_date, is_depleted)
-    VALUES (
-      ${input.name},
-      ${input.quantity},
-      ${input.unit},
-      ${input.zone},
-      ${input.zone_id ?? null},
-      ${input.min_stock ?? null},
-      ${input.expiration_date ?? null},
-      ${input.quantity <= 0 ? 1 : 0}
-    )
-    RETURNING *
-  `;
-  const product = (rows as unknown as any[])[0];
-  return normalizeProduct(product);
+  // Defensive: in case of concurrent access, a UNIQUE INDEX prevents duplicates.
+  // If INSERT fails with unique violation (23505), fall back to update.
+  try {
+    const rows = await sql`
+      INSERT INTO products (name, quantity, unit, zone, zone_id, min_stock, expiration_date, is_depleted)
+      VALUES (
+        ${input.name},
+        ${input.quantity},
+        ${input.unit},
+        ${input.zone},
+        ${input.zone_id ?? null},
+        ${input.min_stock ?? null},
+        ${input.expiration_date ?? null},
+        ${input.quantity <= 0 ? 1 : 0}
+      )
+      RETURNING *
+    `;
+    const product = (rows as unknown as any[])[0];
+    return normalizeProduct(product);
+  } catch (error: any) {
+    // PostgreSQL unique violation error code
+    if (error?.code === '23505') {
+      const retryExisting = await sql`
+        SELECT * FROM products
+        WHERE LOWER(name) = LOWER(${input.name})
+          AND zone_id IS NOT DISTINCT FROM ${input.zone_id ?? null}
+          AND unit = ${input.unit}
+        LIMIT 1
+      `;
+      const retryProduct = (retryExisting as unknown as Product[])[0];
+      if (retryProduct) {
+        const newQuantity = retryProduct.quantity + input.quantity;
+        const rows = await sql`
+          UPDATE products SET
+            quantity = ${newQuantity},
+            unit = ${input.unit},
+            is_depleted = ${newQuantity <= 0 ? 1 : 0},
+            updated_at = NOW()
+          WHERE id = ${retryProduct.id}
+          RETURNING *
+        `;
+        const product = (rows as unknown as any[])[0];
+        return normalizeProduct(product);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function updateProduct(
@@ -260,6 +292,22 @@ export async function getDepletedProducts(): Promise<Product[]> {
   const sql = getSql();
   const rows = await sql`
     SELECT * FROM products WHERE is_depleted = 1 ORDER BY zone, name
+  ` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
+}
+
+export async function getExpiredProducts(): Promise<Product[]> {
+  const sql = getSql();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const rows = await sql`
+    SELECT * FROM products
+    WHERE expiration_date IS NOT NULL
+      AND expiration_date <> ''
+      AND expiration_date < ${todayStr}
+      AND is_depleted = 0
+    ORDER BY expiration_date
   ` as unknown as any[];
   const enriched = await enrichAllWithZone(rows);
   return enriched.map(normalizeProduct);

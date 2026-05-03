@@ -4,6 +4,7 @@ import { Zone, Product } from '../types';
 import { startMoveForProduct } from './move';
 
 const ITEMS_PER_PAGE = 8;
+const DELETE_TIMEOUT_MS = 30000;
 
 interface PantryState {
   zoneId: number;
@@ -12,8 +13,22 @@ interface PantryState {
   page: number;
 }
 
+interface DeleteState {
+  productId: number;
+  productName: string;
+  productQuantity: number;
+  productUnit: string;
+  zoneId: number;
+  zoneName: string;
+  zoneEmoji: string;
+  page: number;
+  timestamp: number;
+  timeoutId?: ReturnType<typeof setTimeout>;
+}
+
 // In-memory pagination state per chat
 const pantryState = new Map<number, PantryState>();
+const deleteState = new Map<number, DeleteState>();
 
 export async function showPantry(ctx: Context): Promise<void> {
   const userId = ctx.from!.id;
@@ -113,12 +128,13 @@ async function showZonePage(ctx: Context, zone: Zone, page: number): Promise<voi
 
   text += `\n\n_Página ${currentPage + 1} de ${totalPages}_`;
 
-  // Build move buttons for each product on this page
-  const moveButtons = pageItems.map((p: Product) => [
+  // Build action buttons for each product on this page
+  const productButtons = pageItems.map((p: Product) => [
     Markup.button.callback(
       `📦 Mover: ${p.name}`,
       `pantry_move_${p.id}`,
     ),
+    Markup.button.callback('🗑️', `pantry_delete_${p.id}`),
   ]);
 
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
@@ -135,7 +151,7 @@ async function showZonePage(ctx: Context, zone: Zone, page: number): Promise<voi
   ];
 
   const keyboard = Markup.inlineKeyboard([
-    ...moveButtons,
+    ...productButtons,
     ...(navButtons.length > 0 ? [navButtons] : []),
     actionButtons,
   ]);
@@ -185,6 +201,128 @@ export async function handlePantryMove(ctx: Context): Promise<void> {
   }
 
   await startMoveForProduct(ctx, product.id, product.name, product.zone_id);
+}
+
+export async function handlePantryDelete(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
+  const productId = parseInt(
+    ctx.callbackQuery.data.replace('pantry_delete_', ''),
+    10,
+  );
+  if (isNaN(productId)) return;
+
+  const product = await productsRepo.getProductById(productId);
+  if (!product) {
+    await ctx.editMessageText('❌ Producto no encontrado.');
+    return;
+  }
+
+  const chatId = ctx.chat!.id;
+  const state = pantryState.get(chatId);
+  if (!state) {
+    await ctx.editMessageText('❌ Error: no hay estado de despensa.');
+    return;
+  }
+
+  // Clear any previous delete state for this chat
+  const existing = deleteState.get(chatId);
+  if (existing?.timeoutId) {
+    clearTimeout(existing.timeoutId);
+  }
+
+  const buttons = Markup.inlineKeyboard([
+    Markup.button.callback('✅ Confirmar', `pantry_del_confirm_${productId}`),
+    Markup.button.callback('❌ Cancelar', 'pantry_del_cancel'),
+  ]);
+
+  await ctx.editMessageText(
+    `🗑️ ¿Seguro que quieres borrar *${product.name}* (${product.quantity}${product.unit})?`,
+    { parse_mode: 'Markdown', ...buttons },
+  );
+
+  // TTL: auto-cancel after 30 seconds
+  const timeoutId = setTimeout(async () => {
+    try {
+      await ctx.editMessageText('⏰ Tiempo agotado. Operación cancelada.');
+    } catch (e) {
+      // Message might have been edited already by confirm/cancel
+    }
+    deleteState.delete(chatId);
+  }, DELETE_TIMEOUT_MS);
+
+  deleteState.set(chatId, {
+    productId,
+    productName: product.name,
+    productQuantity: product.quantity,
+    productUnit: product.unit,
+    zoneId: state.zoneId,
+    zoneName: state.zoneName,
+    zoneEmoji: state.zoneEmoji,
+    page: state.page,
+    timestamp: Date.now(),
+    timeoutId,
+  });
+}
+
+export async function handlePantryDeleteConfirm(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
+  const productId = parseInt(
+    ctx.callbackQuery.data.replace('pantry_del_confirm_', ''),
+    10,
+  );
+  if (isNaN(productId)) return;
+
+  const chatId = ctx.chat!.id;
+  const delState = deleteState.get(chatId);
+
+  // Check TTL: if past 30s, reject
+  if (delState && Date.now() - delState.timestamp > DELETE_TIMEOUT_MS) {
+    if (delState.timeoutId) clearTimeout(delState.timeoutId);
+    await ctx.editMessageText('⏰ Tiempo agotado. Operación cancelada.');
+    deleteState.delete(chatId);
+    return;
+  }
+
+  if (delState?.timeoutId) {
+    clearTimeout(delState.timeoutId);
+  }
+
+  const deleted = await productsRepo.deleteProduct(productId);
+  if (!deleted) {
+    await ctx.editMessageText('❌ Producto no encontrado.');
+    deleteState.delete(chatId);
+    return;
+  }
+
+  await ctx.editMessageText('✅ Producto borrado.');
+  deleteState.delete(chatId);
+}
+
+export async function handlePantryDeleteCancel(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
+
+  const chatId = ctx.chat!.id;
+  const delState = deleteState.get(chatId);
+
+  if (delState?.timeoutId) {
+    clearTimeout(delState.timeoutId);
+  }
+
+  await ctx.editMessageText('❌ Operación cancelada.');
+
+  // Reload zone view
+  if (delState) {
+    const zone: Zone = {
+      id: delState.zoneId,
+      name: delState.zoneName,
+      emoji: delState.zoneEmoji,
+      user_id: null,
+      created_at: '',
+    };
+    await showZonePage(ctx, zone, delState.page);
+  }
+
+  deleteState.delete(chatId);
 }
 
 function capitalize(str: string): string {

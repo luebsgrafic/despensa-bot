@@ -3,12 +3,13 @@ import { message } from 'telegraf/filters';
 import { config } from './utils/config';
 import { authMiddleware, sessionMiddleware } from './middleware';
 import { startHandler, showMainMenu, MAIN_MENU_KEYBOARD } from './handlers/start';
-import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handlePantryClose, handlePantryMove } from './handlers/pantry';
+import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handlePantryClose, handlePantryMove, handlePantryDelete, handlePantryDeleteConfirm, handlePantryDeleteCancel } from './handlers/pantry';
 import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelection, handleNoExpiry, handleNoMinStock, handleSave, handleCancel } from './handlers/add';
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
-import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
+import { showShoppingList, handleBuyItem, handleBuyQty, handleBuyQtyCustom, handleBuyCustomQtyInput, handleBuyZone, handleBuyConfirm, handleBuyCancel, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose, getBuyWizardState } from './handlers/shopping';
 import { startMove, handleMovePickProduct, handleMovePickZone, executeMove, handleMoveCancel } from './handlers/move';
 import { showZones, handleNewZone, handleRenameZone, handleRenamePick, handleRenameInput, handleRenameCancel, handleDeleteZone, handleDeletePick, handleDeleteConfirm, handleDeleteCancel } from './handlers/zones';
+import { showHistory } from './handlers/history';
 import { processWithAI, safeReply } from './services/gemini';
 import { handleVoiceMessage } from './handlers/voice';
 
@@ -37,6 +38,7 @@ export function createBot(): Telegraf<BotContext> {
   bot.command('renombrar-zona', handleRenameZone);
   bot.command('borrar_zona', handleDeleteZone);
   bot.command('borrar-zona', handleDeleteZone);
+  bot.command('historial', showHistory);
 
   // ── Keyboard handlers ──────────────────────────────────
   bot.hears('📦 Ver despensa', showPantry);
@@ -62,6 +64,13 @@ export function createBot(): Telegraf<BotContext> {
     const session = (ctx as any).session;
     if (session?.wizard && session.wizard.step !== 'idle') {
       await handleWizardInput(ctx);
+      return;
+    }
+
+    // Check if user is in buy wizard (waiting for custom quantity)
+    const buyState = getBuyWizardState(ctx.chat!.id);
+    if (buyState && buyState.step === 'qty_awaiting') {
+      await handleBuyCustomQtyInput(ctx);
       return;
     }
 
@@ -95,6 +104,12 @@ export function createBot(): Telegraf<BotContext> {
         await handlePantryClose(ctx);
       } else if (data.startsWith('pantry_move_')) {
         await handlePantryMove(ctx);
+      } else if (data.startsWith('pantry_delete_')) {
+        await handlePantryDelete(ctx);
+      } else if (data.startsWith('pantry_del_confirm_')) {
+        await handlePantryDeleteConfirm(ctx);
+      } else if (data === 'pantry_del_cancel') {
+        await handlePantryDeleteCancel(ctx);
       } else if (data.startsWith('wizard_zone_')) {
         await handleZoneSelection(ctx);
       } else if (data.startsWith('wizard_unit_')) {
@@ -117,8 +132,18 @@ export function createBot(): Telegraf<BotContext> {
         await handleConsumeDone(ctx);
       } else if (data === 'consume_cancel') {
         await handleConsumeCancel(ctx);
-      } else if (data.startsWith('shop_toggle_')) {
-        await handleToggleItem(ctx);
+      } else if (data.startsWith('shop_buy_') || data.startsWith('shop_toggle_')) {
+        await handleBuyItem(ctx);
+      } else if (data.startsWith('shop_qty_') && data !== 'shop_qty_custom') {
+        await handleBuyQty(ctx);
+      } else if (data === 'shop_qty_custom') {
+        await handleBuyQtyCustom(ctx);
+      } else if (data.startsWith('shop_dest_')) {
+        await handleBuyZone(ctx);
+      } else if (data === 'shop_confirm') {
+        await handleBuyConfirm(ctx);
+      } else if (data === 'shop_buy_cancel') {
+        await handleBuyCancel(ctx);
       } else if (data === 'shop_next' || data === 'shop_prev') {
         await handleShoppingPage(ctx);
       } else if (data === 'shop_share') {

@@ -13,7 +13,7 @@ if (fs.existsSync(envPath)) {
 import { initializeSchema } from './db/schema';
 import { createBot } from './bot';
 import { config } from './utils/config';
-import { startScheduler } from './services/scheduler';
+import { startScheduler, startWeeklySummary } from './services/scheduler';
 
 // ── 2. Validate environment ────────────────────────────
 const PORT = Number(process.env.PORT || 3000);
@@ -107,6 +107,7 @@ app.listen(PORT, async () => {
 });
 
 startScheduler(bot);
+startWeeklySummary(bot);
 
 // ── 7. Graceful shutdown ───────────────────────────────
 process.once('SIGINT', () => bot.stop('SIGINT'));

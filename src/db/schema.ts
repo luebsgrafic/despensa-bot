@@ -5,6 +5,11 @@ import { DEFAULT_ZONES, DEFAULT_ZONE_EMOJIS } from './default-zones';
 let sql: NeonQueryFunction<false, false>;
 let schemaInitialized = false;
 
+/** For integration tests — allows resetting schema to re-run initializeSchema */
+export function resetSchemaInitialized(): void {
+  schemaInitialized = false;
+}
+
 export function getSql(): NeonQueryFunction<false, false> {
   if (!sql) {
     // Use DATABASE_URL from env (allows override for tests), fall back to config
@@ -130,7 +135,7 @@ export async function initializeSchema(): Promise<void> {
     WHERE p.zone_id IS NULL AND p.zone IS NOT NULL
   `;
 
-  // ── Merge duplicate products by name + zone_id ─────────
+  // ── Merge duplicate products by name + zone_id + unit ──
   // Sum quantities, keep the most recent row, delete the rest.
   // Idempotent — safe to run multiple times.
   await sql`
@@ -139,10 +144,11 @@ export async function initializeSchema(): Promise<void> {
       SELECT SUM(p2.quantity) FROM products p2
       WHERE LOWER(p2.name) = LOWER(p.name)
         AND p2.zone_id IS NOT DISTINCT FROM p.zone_id
+        AND p2.unit = p.unit
     )
     WHERE p.id IN (
       SELECT MAX(p3.id) FROM products p3
-      GROUP BY LOWER(p3.name), p3.zone_id
+      GROUP BY LOWER(p3.name), p3.zone_id, p3.unit
       HAVING COUNT(*) > 1
     )
   `;
@@ -150,8 +156,17 @@ export async function initializeSchema(): Promise<void> {
     DELETE FROM products p
     WHERE p.id NOT IN (
       SELECT MAX(p4.id) FROM products p4
-      GROUP BY LOWER(p4.name), p4.zone_id
+      GROUP BY LOWER(p4.name), p4.zone_id, p4.unit
     )
+  `;
+
+  // ── Unique index: prevent duplicate products by name + zone + unit ──
+  // Prevents race-condition duplicates when two concurrent INSERTs happen.
+  // Postgres allows multiple NULLs in unique indexes, but the upsert
+  // SELECT handles NULL zone_id correctly for serial access.
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_zone_unit_unique
+    ON products (LOWER(name), zone_id, unit)
   `;
 
   // ── Indexes ────────────────────────────────────────────
