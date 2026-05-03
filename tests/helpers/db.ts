@@ -1,6 +1,7 @@
 import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 
 let testSql: NeonQueryFunction<false, false> | null = null;
+let dbInitialized = false;
 
 /**
  * Get a Neon connection for integration tests.
@@ -28,9 +29,12 @@ export function getTestSql(): NeonQueryFunction<false, false> {
  * Idempotent — safe to call multiple times.
  */
 export async function initTestDb(): Promise<void> {
+  if (dbInitialized) return;
+  dbInitialized = true;
+
   const sql = getTestSql();
 
-  // Drop all tables to ensure clean schema (idempotent — only runs once per test suite)
+  // Drop all tables to ensure clean schema
   await sql`DROP TABLE IF EXISTS movement_log CASCADE`;
   await sql`DROP TABLE IF EXISTS shopping_list CASCADE`;
   await sql`DROP TABLE IF EXISTS products CASCADE`;
