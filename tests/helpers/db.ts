@@ -68,6 +68,12 @@ export async function initTestDb(): Promise<void> {
       ON CONFLICT DO NOTHING
     `;
 
+    // DEBUG: count zones after initTestDb
+    const zoneCount = await sql`SELECT COUNT(*) as c FROM zones`;
+    console.log(`[DEBUG initTestDb] zones count: ${zoneCount[0].c}`);
+    const allZones = await sql`SELECT id, name, user_id FROM zones ORDER BY id`;
+    console.log('[DEBUG initTestDb] zones:', JSON.stringify(allZones));
+
     await sql`CREATE TABLE products (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -137,6 +143,12 @@ export async function cleanTestDb(): Promise<void> {
       (NULL, 'otros', '📌')
     ON CONFLICT DO NOTHING
   `;
+
+  // DEBUG: count zones after cleanTestDb
+  const zoneCount = await sql`SELECT COUNT(*) as c FROM zones`;
+  console.log(`[DEBUG cleanTestDb] zones count: ${zoneCount[0].c}`);
+  const allZones = await sql`SELECT id, name, user_id FROM zones ORDER BY id`;
+  console.log('[DEBUG cleanTestDb] zones:', JSON.stringify(allZones));
 }
 
 /**
