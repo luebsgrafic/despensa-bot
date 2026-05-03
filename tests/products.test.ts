@@ -12,8 +12,24 @@ function resetState() {
 }
 
 vi.mock('../src/db/schema', () => {
+  /**
+   * Reconstruct the full SQL query from a tagged template call.
+   * Tagged templates split on interpolations, so we need to interleave
+   * the string parts with the values to get the full query text.
+   */
+  function reconstructQuery(strings: TemplateStringsArray, values: any[]): string {
+    let query = '';
+    for (let i = 0; i < strings.length; i++) {
+      query += strings[i];
+      if (i < values.length) {
+        query += String(values[i]);
+      }
+    }
+    return query;
+  }
+
   const mockSql = (_strings: TemplateStringsArray, ...values: any[]) => {
-    const query = _strings.join('?');
+    const query = reconstructQuery(_strings, values);
 
     if (query.includes('INSERT INTO products')) {
       const product = {
@@ -22,10 +38,10 @@ vi.mock('../src/db/schema', () => {
         quantity: values[1],
         unit: values[2],
         zone: values[3],
-        zone_id: null,
-        min_stock: values[4],
-        expiration_date: values[5],
-        is_depleted: values[6],
+        zone_id: values[4],
+        min_stock: values[5],
+        expiration_date: values[6],
+        is_depleted: values[7],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -33,7 +49,44 @@ vi.mock('../src/db/schema', () => {
       return [product];
     }
 
-    if (query.includes('SELECT * FROM products WHERE id = ?')) {
+    // Match SELECT with JOIN (new format) or simple SELECT (legacy format)
+    if (query.includes('LEFT JOIN zones')) {
+      // New format with JOIN — extract WHERE conditions
+      if (query.includes('WHERE p.id =')) {
+        return [state.products.find((p: any) => p.id === values[values.length - 1])].filter(Boolean);
+      }
+      if (query.includes('WHERE p.zone =')) {
+        return state.products.filter((p: any) => p.zone === values[values.length - 1]);
+      }
+      if (query.includes('WHERE p.name ILIKE')) {
+        const pattern = (values[values.length - 1] as string).replace(/%/g, '').toLowerCase();
+        return state.products.filter((p: any) => p.name.toLowerCase().includes(pattern));
+      }
+      if (query.includes('WHERE p.expiration_date')) {
+        return state.products.filter(
+          (p: any) =>
+            p.expiration_date &&
+            p.expiration_date <= values[values.length - 1] &&
+            p.expiration_date >= new Date().toISOString().split('T')[0] &&
+            !p.is_depleted,
+        );
+      }
+      if (query.includes('WHERE p.min_stock')) {
+        return state.products.filter(
+          (p: any) => p.min_stock !== null && p.quantity <= p.min_stock && !p.is_depleted,
+        );
+      }
+      if (query.includes('WHERE p.is_depleted = 1')) {
+        return state.products.filter((p: any) => p.is_depleted);
+      }
+      // getAllProducts — no WHERE clause
+      return [...state.products].sort(
+        (a: any, b: any) => (a.zone || '').localeCompare(b.zone || '') || a.name.localeCompare(b.name),
+      );
+    }
+
+    // Legacy format (SELECT * FROM products)
+    if (query.includes('SELECT * FROM products WHERE id =')) {
       return [state.products.find((p: any) => p.id === values[0])].filter(Boolean);
     }
 
@@ -43,7 +96,7 @@ vi.mock('../src/db/schema', () => {
       );
     }
 
-    if (query.includes('SELECT * FROM products WHERE zone = ?')) {
+    if (query.includes('SELECT * FROM products WHERE zone =')) {
       return state.products.filter((p: any) => p.zone === values[0]);
     }
 
@@ -68,7 +121,7 @@ vi.mock('../src/db/schema', () => {
       return product ? [product] : [];
     }
 
-    if (query.includes('DELETE FROM products WHERE id = ?')) {
+    if (query.includes('DELETE FROM products WHERE id =')) {
       const idx = state.products.findIndex((p: any) => p.id === values[0]);
       if (idx !== -1) {
         state.products.splice(idx, 1);
@@ -77,7 +130,7 @@ vi.mock('../src/db/schema', () => {
       return { count: 0 };
     }
 
-    if (query.includes('expiration_date')) {
+    if (query.includes('expiration_date') && !query.includes('p.expiration_date')) {
       return state.products.filter(
         (p: any) =>
           p.expiration_date &&
@@ -87,13 +140,13 @@ vi.mock('../src/db/schema', () => {
       );
     }
 
-    if (query.includes('min_stock')) {
+    if (query.includes('min_stock') && !query.includes('p.min_stock')) {
       return state.products.filter(
         (p: any) => p.min_stock !== null && p.quantity <= p.min_stock && !p.is_depleted,
       );
     }
 
-    if (query.includes('is_depleted = 1')) {
+    if (query.includes('is_depleted = 1') && !query.includes('p.is_depleted')) {
       return state.products.filter((p: any) => p.is_depleted);
     }
 
