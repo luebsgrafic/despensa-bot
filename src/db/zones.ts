@@ -1,13 +1,29 @@
 import { getSql } from './schema';
 import { Zone } from '../types';
 
+/**
+ * Normalize a zone row: ensure user_id is a number (not string from PG).
+ */
+function normalizeZone(z: any): Zone {
+  if (!z) return z;
+  return {
+    ...z,
+    user_id: z.user_id !== null && z.user_id !== undefined ? Number(z.user_id) : null,
+  };
+}
+
+function normalizeZones(rows: any[]): Zone[] {
+  return (rows as Zone[]).map(normalizeZone);
+}
+
 export async function getZonesByUser(userId: number): Promise<Zone[]> {
   const sql = getSql();
-  return sql`
+  const rows = await sql`
     SELECT * FROM zones
     WHERE user_id IS NULL OR user_id = ${userId}
     ORDER BY user_id NULLS FIRST, name
-  ` as unknown as Zone[];
+  `;
+  return normalizeZones(rows as any[]);
 }
 
 export async function createZone(
@@ -17,7 +33,7 @@ export async function createZone(
 ): Promise<Zone> {
   const sql = getSql();
 
-  // Check for duplicate name — only for the same user or system zones
+  // Check for duplicate name — only for the same user
   const existing = await sql`
     SELECT id FROM zones
     WHERE user_id = ${userId}
@@ -33,7 +49,7 @@ export async function createZone(
     VALUES (${userId}, ${name}, ${emoji ?? '📦'})
     RETURNING *
   `;
-  return (rows as unknown as Zone[])[0];
+  return normalizeZone((rows as any[])[0]);
 }
 
 export async function renameZone(
@@ -43,7 +59,7 @@ export async function renameZone(
 ): Promise<Zone> {
   const sql = getSql();
   const rows = await sql`SELECT * FROM zones WHERE id = ${zoneId}`;
-  const zone = (rows as unknown as Zone[])[0];
+  const zone = normalizeZone((rows as any[])[0]);
 
   if (!zone) {
     throw new Error('NOT_FOUND');
@@ -69,7 +85,7 @@ export async function renameZone(
   const updated = await sql`
     UPDATE zones SET name = ${newName} WHERE id = ${zoneId} RETURNING *
   `;
-  return (updated as unknown as Zone[])[0];
+  return normalizeZone((updated as any[])[0]);
 }
 
 export async function deleteZone(
@@ -78,7 +94,7 @@ export async function deleteZone(
 ): Promise<boolean> {
   const sql = getSql();
   const rows = await sql`SELECT * FROM zones WHERE id = ${zoneId}`;
-  const zone = (rows as unknown as Zone[])[0];
+  const zone = normalizeZone((rows as any[])[0]);
 
   if (!zone) {
     throw new Error('NOT_FOUND');
@@ -105,15 +121,14 @@ export async function deleteZone(
 
 export async function getDefaultZones(): Promise<Zone[]> {
   const sql = getSql();
-  return sql`
+  const rows = await sql`
     SELECT * FROM zones WHERE user_id IS NULL ORDER BY id
-  ` as unknown as Zone[];
+  `;
+  return normalizeZones(rows as any[]);
 }
 
 export async function ensureDefaultZones(): Promise<void> {
   const sql = getSql();
-  // Idempotent insert — the ON CONFLICT DO NOTHING in schema.ts handles this,
-  // but this function provides an explicit API for it
   await sql`
     INSERT INTO zones (user_id, name, emoji)
     VALUES
@@ -129,5 +144,6 @@ export async function ensureDefaultZones(): Promise<void> {
 export async function getZoneById(zoneId: number): Promise<Zone | undefined> {
   const sql = getSql();
   const rows = await sql`SELECT * FROM zones WHERE id = ${zoneId}`;
-  return (rows as unknown as Zone[])[0];
+  const zone = (rows as any[])[0];
+  return zone ? normalizeZone(zone) : undefined;
 }

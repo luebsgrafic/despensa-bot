@@ -23,22 +23,46 @@ export interface UpdateProductInput {
 }
 
 /**
- * Build a SELECT query with LEFT JOIN zones to get zone_name and zone_emoji.
- * Neon tagged templates don't support ${} for SQL fragments (only for values),
- * so we build the query string and use sql.unsafe() for the dynamic part.
+ * Enrich a product row with zone_name and zone_emoji from the zones table.
+ * Uses a separate query instead of JOIN to avoid Neon tagged template limitations.
  */
-function selectWithJoin(whereClause: string, orderClause: string, values: any[]): any {
+async function enrichWithZone(product: any): Promise<any> {
+  if (!product || !product.zone_id) return product;
   const sql = getSql();
-  const query = `
-    SELECT p.*, z.name as zone_name, z.emoji as zone_emoji
-    FROM products p
-    LEFT JOIN zones z ON p.zone_id = z.id
-    ${whereClause}
-    ${orderClause}
-  `;
-  // Use unsafe() to execute raw SQL with positional params ($1, $2, etc.)
-  // The WHERE/ORDER clauses are controlled strings, values are user-safe params
-  return (sql as any).unsafe(query, values);
+  const rows = await sql`SELECT name, emoji FROM zones WHERE id = ${product.zone_id}`;
+  const zone = (rows as any[])[0];
+  if (zone) {
+    product.zone_name = zone.name;
+    product.zone_emoji = zone.emoji;
+  }
+  return product;
+}
+
+async function enrichAllWithZone(products: any[]): Promise<any[]> {
+  return Promise.all(products.map(enrichWithZone));
+}
+
+/**
+ * Format a date value from PostgreSQL (Date object or string) to YYYY-MM-DD string.
+ */
+function formatDateValue(date: any): string | null {
+  if (!date) return null;
+  if (typeof date === 'string') return date.split('T')[0];
+  if (date instanceof Date) return date.toISOString().split('T')[0];
+  return String(date);
+}
+
+/**
+ * Normalize a product row: format dates, ensure correct types.
+ */
+function normalizeProduct(p: any): Product {
+  return {
+    ...p,
+    expiration_date: formatDateValue(p.expiration_date),
+    is_depleted: p.is_depleted === 1 || p.is_depleted === true ? 1 : 0,
+    zone_id: p.zone_id ?? null,
+    min_stock: p.min_stock ?? null,
+  } as unknown as Product;
 }
 
 async function getZoneNameById(zoneId: number | null | undefined): Promise<string | null> {
@@ -50,24 +74,37 @@ async function getZoneNameById(zoneId: number | null | undefined): Promise<strin
 }
 
 export async function getAllProducts(): Promise<Product[]> {
-  return selectWithJoin('', 'ORDER BY COALESCE(z.name, p.zone), p.name', []) as unknown as Product[];
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM products ORDER BY zone, name` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
 
 export async function getProductsByZone(zone: StorageZone): Promise<Product[]> {
-  return selectWithJoin('WHERE p.zone = $1', 'ORDER BY p.name', [zone]) as unknown as Product[];
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM products WHERE zone = ${zone} ORDER BY name` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
 
 export async function getProductById(id: number): Promise<Product | undefined> {
-  const rows = await selectWithJoin('WHERE p.id = $1', '', [id]);
-  return (rows as unknown as Product[])[0];
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM products WHERE id = ${id}`;
+  const product = (rows as unknown as any[])[0];
+  if (!product) return undefined;
+  const enriched = await enrichWithZone(product);
+  return normalizeProduct(enriched);
 }
 
 export async function searchProducts(query: string): Promise<Product[]> {
-  return selectWithJoin(
-    'WHERE p.name ILIKE $1',
-    'ORDER BY COALESCE(z.name, p.zone), p.name',
-    [`%${query}%`],
-  ) as unknown as Product[];
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM products
+    WHERE name ILIKE ${'%' + query + '%'}
+    ORDER BY zone, name
+  ` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
@@ -86,7 +123,8 @@ export async function createProduct(input: CreateProductInput): Promise<Product>
     )
     RETURNING *
   `;
-  return (rows as unknown as Product[])[0];
+  const product = (rows as unknown as any[])[0];
+  return normalizeProduct(product);
 }
 
 export async function updateProduct(
@@ -124,7 +162,10 @@ export async function updateProduct(
     WHERE id = ${id}
     RETURNING *
   `;
-  return (rows as unknown as Product[])[0];
+  const product = (rows as unknown as any[])[0];
+  if (!product) return undefined;
+  const enriched = await enrichWithZone(product);
+  return normalizeProduct(enriched);
 }
 
 export async function deleteProduct(id: number): Promise<boolean> {
@@ -134,29 +175,41 @@ export async function deleteProduct(id: number): Promise<boolean> {
 }
 
 export async function getExpiringProducts(days: number): Promise<Product[]> {
+  const sql = getSql();
   const threshold = new Date();
   threshold.setDate(threshold.getDate() + days);
   const thresholdStr = threshold.toISOString().split('T')[0];
 
-  return selectWithJoin(
-    'WHERE p.expiration_date IS NOT NULL AND p.expiration_date <= $1::date AND p.expiration_date >= CURRENT_DATE AND p.is_depleted = 0',
-    'ORDER BY p.expiration_date',
-    [thresholdStr],
-  ) as unknown as Product[];
+  const rows = await sql`
+    SELECT * FROM products
+    WHERE expiration_date IS NOT NULL
+      AND expiration_date <= ${thresholdStr}::date
+      AND expiration_date >= CURRENT_DATE
+      AND is_depleted = 0
+    ORDER BY expiration_date
+  ` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
 
 export async function getLowStockProducts(): Promise<Product[]> {
-  return selectWithJoin(
-    'WHERE p.min_stock IS NOT NULL AND p.quantity <= p.min_stock AND p.is_depleted = 0',
-    'ORDER BY COALESCE(z.name, p.zone), p.name',
-    [],
-  ) as unknown as Product[];
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM products
+    WHERE min_stock IS NOT NULL
+      AND quantity <= min_stock
+      AND is_depleted = 0
+    ORDER BY zone, name
+  ` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
 
 export async function getDepletedProducts(): Promise<Product[]> {
-  return selectWithJoin(
-    'WHERE p.is_depleted = 1',
-    'ORDER BY COALESCE(z.name, p.zone), p.name',
-    [],
-  ) as unknown as Product[];
+  const sql = getSql();
+  const rows = await sql`
+    SELECT * FROM products WHERE is_depleted = 1 ORDER BY zone, name
+  ` as unknown as any[];
+  const enriched = await enrichAllWithZone(rows);
+  return enriched.map(normalizeProduct);
 }
