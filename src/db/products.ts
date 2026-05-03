@@ -176,6 +176,7 @@ export async function deleteProduct(id: number): Promise<boolean> {
 
 export async function getExpiringProducts(days: number): Promise<Product[]> {
   const sql = getSql();
+  const todayStr = new Date().toISOString().split('T')[0];
   const threshold = new Date();
   threshold.setDate(threshold.getDate() + days);
   const thresholdStr = threshold.toISOString().split('T')[0];
@@ -183,8 +184,9 @@ export async function getExpiringProducts(days: number): Promise<Product[]> {
   const rows = await sql`
     SELECT * FROM products
     WHERE expiration_date IS NOT NULL
-      AND expiration_date <= ${thresholdStr}::date
-      AND expiration_date >= CURRENT_DATE
+      AND expiration_date <> ''
+      AND expiration_date >= ${todayStr}
+      AND expiration_date <= ${thresholdStr}
       AND is_depleted = 0
     ORDER BY expiration_date
   ` as unknown as any[];

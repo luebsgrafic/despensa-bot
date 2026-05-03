@@ -34,71 +34,77 @@ export async function initTestDb(): Promise<void> {
 
   const sql = getTestSql();
 
-  // Drop all tables to ensure clean schema
-  await sql`DROP TABLE IF EXISTS movement_log CASCADE`;
-  await sql`DROP TABLE IF EXISTS shopping_list CASCADE`;
-  await sql`DROP TABLE IF EXISTS products CASCADE`;
-  await sql`DROP TABLE IF EXISTS zones CASCADE`;
+  try {
+    // Drop all tables to ensure clean schema
+    await sql`DROP TABLE IF EXISTS movement_log CASCADE`;
+    await sql`DROP TABLE IF EXISTS shopping_list CASCADE`;
+    await sql`DROP TABLE IF EXISTS products CASCADE`;
+    await sql`DROP TABLE IF EXISTS zones CASCADE`;
 
-  // Recreate zones with INTEGER user_id (not BIGINT, which returns string from Neon)
-  await sql`CREATE TABLE zones (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER,
-    name TEXT NOT NULL,
-    emoji TEXT NOT NULL DEFAULT '📦',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
+    // Recreate zones with INTEGER user_id (not BIGINT, which returns string from Neon)
+    await sql`CREATE TABLE zones (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      name TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '📦',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
 
-  // Create unique index for system zones
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
-    ON zones(name) WHERE user_id IS NULL
-  `;
+    // Create unique index for system zones
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
+      ON zones(name) WHERE user_id IS NULL
+    `;
 
-  // Insert default zones
-  await sql`
-    INSERT INTO zones (user_id, name, emoji)
-    VALUES
-      (NULL, 'nevera', '🧊'),
-      (NULL, 'congelador', '❄️'),
-      (NULL, 'armario_cocina', '🚪'),
-      (NULL, 'despensa', '📦'),
-      (NULL, 'otros', '📌')
-  `;
+    // Insert exactly 5 default zones
+    await sql`
+      INSERT INTO zones (user_id, name, emoji)
+      VALUES
+        (NULL, 'nevera', '🧊'),
+        (NULL, 'congelador', '❄️'),
+        (NULL, 'armario_cocina', '🚪'),
+        (NULL, 'despensa', '📦'),
+        (NULL, 'otros', '📌')
+    `;
 
-  await sql`CREATE TABLE products (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    quantity REAL NOT NULL DEFAULT 0,
-    unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
-    zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
-    zone_id INTEGER REFERENCES zones(id),
-    min_stock REAL,
-    expiration_date TEXT,
-    is_depleted INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
+    await sql`CREATE TABLE products (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 0,
+      unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
+      zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
+      zone_id INTEGER REFERENCES zones(id),
+      min_stock REAL,
+      expiration_date TEXT,
+      is_depleted INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
 
-  await sql`CREATE TABLE shopping_list (
-    id SERIAL PRIMARY KEY,
-    product_name TEXT NOT NULL,
-    quantity REAL NOT NULL DEFAULT 1,
-    unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
-    is_checked INTEGER NOT NULL DEFAULT 0,
-    added_by BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
+    await sql`CREATE TABLE shopping_list (
+      id SERIAL PRIMARY KEY,
+      product_name TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1,
+      unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
+      is_checked INTEGER NOT NULL DEFAULT 0,
+      added_by BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
 
-  await sql`CREATE TABLE movement_log (
-    id SERIAL PRIMARY KEY,
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    action TEXT NOT NULL CHECK(action IN ('added', 'consumed', 'moved', 'restocked', 'depleted')),
-    previous_value TEXT,
-    new_value TEXT,
-    user_id BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
+    await sql`CREATE TABLE movement_log (
+      id SERIAL PRIMARY KEY,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      action TEXT NOT NULL CHECK(action IN ('added', 'consumed', 'moved', 'restocked', 'depleted')),
+      previous_value TEXT,
+      new_value TEXT,
+      user_id BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`;
+  } catch (error) {
+    // Reset flag so next call retries
+    dbInitialized = false;
+    throw error;
+  }
 }
 
 /**
@@ -113,19 +119,22 @@ export async function cleanTestDb(): Promise<void> {
   await sql`DELETE FROM products`;
   await sql`DELETE FROM zones WHERE user_id IS NOT NULL`;
 
-  // Re-insert default zones if they were deleted (idempotent)
+  // Ensure unique index exists (prevents duplicates from initializeSchema ON CONFLICT)
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
+    ON zones(name) WHERE user_id IS NULL
+  `;
+
+  // Re-insert default zones if they were deleted (idempotent via unique index)
   await sql`
     INSERT INTO zones (user_id, name, emoji)
-    SELECT * FROM (VALUES
-      (NULL::INTEGER, 'nevera', '🧊'),
+    VALUES
+      (NULL, 'nevera', '🧊'),
       (NULL, 'congelador', '❄️'),
       (NULL, 'armario_cocina', '🚪'),
       (NULL, 'despensa', '📦'),
       (NULL, 'otros', '📌')
-    ) AS v(user_id, name, emoji)
-    WHERE NOT EXISTS (
-      SELECT 1 FROM zones WHERE name = v.name AND user_id IS NULL
-    )
+    ON CONFLICT DO NOTHING
   `;
 }
 

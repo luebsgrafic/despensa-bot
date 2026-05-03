@@ -131,11 +131,15 @@ vi.mock('../src/db/schema', () => {
     }
 
     if (query.includes('expiration_date') && !query.includes('p.expiration_date')) {
+      // New format: expiration_date >= $1 AND expiration_date <= $2
+      // values[0] = todayStr, values[1] = thresholdStr
+      const todayStr = values[0];
+      const thresholdStr = values[1] || values[0];
       return state.products.filter(
         (p: any) =>
           p.expiration_date &&
-          p.expiration_date <= values[0] &&
-          p.expiration_date >= new Date().toISOString().split('T')[0] &&
+          p.expiration_date >= todayStr &&
+          p.expiration_date <= thresholdStr &&
           !p.is_depleted,
       );
     }
