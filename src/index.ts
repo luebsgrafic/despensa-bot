@@ -10,6 +10,7 @@ if (fs.existsSync(envPath)) {
   console.log('[Config] Loaded .env from:', envPath);
 }
 
+import { initializeSchema } from './db/schema';
 import { createBot } from './bot';
 import { startScheduler } from './services/scheduler';
 
@@ -32,7 +33,18 @@ if (WEBHOOK_URL.includes('localhost')) {
 console.log('[Config] PORT:', PORT);
 console.log('[Config] WEBHOOK_URL:', WEBHOOK_URL);
 
-// ── 3. Create bot ──────────────────────────────────────
+// ── 3. Initialize database schema ──────────────────────
+async function initDb(): Promise<void> {
+  try {
+    await initializeSchema();
+    console.log('[DB] Schema initialized successfully');
+  } catch (error) {
+    console.error('[DB] Failed to initialize schema:', error);
+    process.exit(1);
+  }
+}
+
+// ── 4. Create bot ──────────────────────────────────────
 const bot = createBot();
 
 // ── 4. Safe webhook setup ──────────────────────────────
@@ -88,6 +100,7 @@ app.get('/api/webhook', (_req, res) => {
 // ── 6. Start ───────────────────────────────────────────
 app.listen(PORT, async () => {
   console.log('[Server] Listening on port', PORT);
+  await initDb();
   await setupWebhook();
 });
 

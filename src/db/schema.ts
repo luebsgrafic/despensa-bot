@@ -2,18 +2,20 @@ import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 import { config } from '../utils/config';
 
 let sql: NeonQueryFunction<false, false>;
+let schemaInitialized = false;
 
 export function getSql(): NeonQueryFunction<false, false> {
   if (!sql) {
     sql = neon(config.databaseUrl);
-    // Initialize schema — each statement must be a separate call
-    // because Neon does not support multiple commands in a prepared statement
-    initializeSchema();
   }
   return sql;
 }
 
-async function initializeSchema(): Promise<void> {
+export async function initializeSchema(): Promise<void> {
+  if (schemaInitialized) return;
+  schemaInitialized = true;
+
+  sql = sql || neon(config.databaseUrl);
   await sql`
     CREATE TABLE IF NOT EXISTS products (
       id SERIAL PRIMARY KEY,
