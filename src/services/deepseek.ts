@@ -7,6 +7,34 @@ const client = new OpenAI({
   apiKey: config.deepseekApiKey,
 });
 
+const FALLBACK_MESSAGE =
+  'No he podido interpretar bien el mensaje. ¿Puedes decirme el producto, cantidad y zona? ' +
+  'Ejemplo: añadir 2 kg de pollo en congelador.';
+
+const MAX_REPLY_LENGTH = 4096;
+
+/**
+ * Safely sends a text reply to a Telegram context.
+ * - Converts to string, trims, falls back if empty
+ * - Truncates if over 4096 chars
+ * - Does NOT use Markdown (safe for dynamic content)
+ */
+export function safeReply(ctx: any, text: unknown): Promise<any> {
+  let safeText = String(text ?? '').trim();
+
+  if (!safeText) {
+    console.warn('[safeReply] Empty response detected, using fallback');
+    safeText = FALLBACK_MESSAGE;
+  }
+
+  if (safeText.length > MAX_REPLY_LENGTH) {
+    console.warn(`[safeReply] Truncating response from ${safeText.length} to ${MAX_REPLY_LENGTH} chars`);
+    safeText = safeText.slice(0, MAX_REPLY_LENGTH - 3) + '...';
+  }
+
+  return ctx.reply(safeText);
+}
+
 interface AIAction {
   action: 'add_product' | 'add_shopping' | 'show_shopping' | 'show_pantry' | 'answer';
   params: Record<string, any>;
@@ -63,7 +91,15 @@ Responde en español, tono amigable, máximo 200 tokens.`;
     temperature: 0.3,
   });
 
-  const response = completion.choices[0]?.message?.content || '';
+  const rawContent = completion.choices[0]?.message?.content;
+  const response = (rawContent || '').trim();
+
+  // Log if DeepSeek returned empty
+  if (!response) {
+    console.warn('[DeepSeek] Empty response received');
+    console.warn('[DeepSeek] Status:', completion.usage || 'no usage data');
+    return '';
+  }
 
   // Parse action from response
   const action = parseAction(response);
@@ -116,7 +152,7 @@ async function executeAction(action: AIAction, userId: number): Promise<string> 
             : 'otros',
         });
 
-        return `✅ He añadido *${name}* (${quantity}${unit}) a la despensa en *${zone}*.\n\n${action.message || '¿Necesitas algo más?'}`;
+        return `✅ He añadido ${name} (${quantity}${unit}) a la despensa en ${zone}.\n\n${action.message || '¿Necesitas algo más?'}`;
       }
 
       case 'add_shopping': {
@@ -129,25 +165,25 @@ async function executeAction(action: AIAction, userId: number): Promise<string> 
           added_by: userId,
         });
 
-        return `🛒 *${productName}* añadido a la lista de la compra.\n\nPulsa el botón "🛒 Lista compra" para verla completa.`;
+        return `🛒 ${productName} añadido a la lista de la compra.\n\nPulsa el botón "🛒 Lista compra" para verla completa.`;
       }
 
       case 'show_shopping': {
         const items = await shoppingRepo.getUncheckedItems();
         if (items.length === 0) {
-          return '🛒 *Lista de la compra*\n\n_La lista está vacía._';
+          return '🛒 Lista de la compra\n\nLa lista está vacía.';
         }
         const list = items
           .map((item, i) => `${i + 1}. ${item.product_name} — ${item.quantity}${item.unit}`)
           .join('\n');
-        return `🛒 *Lista de la compra*\n\n${list}`;
+        return `🛒 Lista de la compra\n\n${list}`;
       }
 
       case 'show_pantry': {
         const products = await productsRepo.getAllProducts();
         const active = products.filter((p) => !p.is_depleted);
         if (active.length === 0) {
-          return '📦 *Despensa*\n\n_No hay productos registrados._';
+          return '📦 Despensa\n\nNo hay productos registrados.';
         }
         const byZone: Record<string, string[]> = {};
         for (const p of active) {
@@ -155,13 +191,13 @@ async function executeAction(action: AIAction, userId: number): Promise<string> 
           byZone[p.zone].push(`${p.name} (${p.quantity}${p.unit})`);
         }
         const text = Object.entries(byZone)
-          .map(([zone, items]) => `*${zone}:* ${items.join(', ')}`)
+          .map(([zone, items]) => `${zone}: ${items.join(', ')}`)
           .join('\n');
-        return `📦 *Despensa*\n\n${text}`;
+        return `📦 Despensa\n\n${text}`;
       }
 
       default:
-        return action.message || 'Entendido. ¿Necesitas algo más? 😊';
+        return action.message || FALLBACK_MESSAGE;
     }
   } catch (error: any) {
     console.error('Error executing AI action:', error);

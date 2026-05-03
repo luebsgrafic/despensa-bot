@@ -7,7 +7,7 @@ import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handl
 import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelection, handleNoExpiry, handleNoMinStock, handleSave, handleCancel } from './handlers/add';
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
-import { processWithAI } from './services/deepseek';
+import { processWithAI, safeReply } from './services/deepseek';
 
 // Extend Context type to include session
 export interface BotContext extends Context {
@@ -119,12 +119,10 @@ export function createBot(): Telegraf<BotContext> {
     try {
       await ctx.sendChatAction('typing');
       const response = await processWithAI(text, ctx.from!.id);
-      await ctx.reply(response);
+      await safeReply(ctx, response);
     } catch (error) {
       console.error('DeepSeek error:', error);
-      await ctx.reply(
-        '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.',
-      );
+      await safeReply(ctx, '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.');
     }
   });
 
