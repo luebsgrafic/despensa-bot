@@ -158,14 +158,26 @@ export async function executeMove(ctx: Context): Promise<void> {
   if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
   const chatId = ctx.chat!.id;
   const state = moveState.get(chatId);
-  if (!state) return;
+  if (!state) {
+    console.warn(`[Move] No state found for chat ${chatId}`);
+    return;
+  }
 
-  const zoneId = parseInt(
-    ctx.callbackQuery.data.replace('move_confirm_', ''),
-    10,
-  );
+  const rawData = ctx.callbackQuery.data;
+  console.log(`[Move] executeMove called with data: "${rawData}"`);
+
+  const zoneId = parseInt(rawData.replace('move_confirm_', ''), 10);
+  console.log(`[Move] Parsed zoneId: ${zoneId} (isNaN: ${isNaN(zoneId)})`);
+
+  if (isNaN(zoneId)) {
+    await ctx.editMessageText('❌ Error: zona no válida.');
+    moveState.delete(chatId);
+    return;
+  }
+
   const zone = await zonesRepo.getZoneById(zoneId);
   if (!zone) {
+    console.warn(`[Move] Zone ${zoneId} not found in DB`);
     await ctx.editMessageText('❌ Zona no encontrada.');
     moveState.delete(chatId);
     return;
@@ -173,7 +185,20 @@ export async function executeMove(ctx: Context): Promise<void> {
 
   const product = await productsRepo.getProductById(state.productId);
   if (!product) {
+    console.warn(`[Move] Product ${state.productId} not found in DB`);
     await ctx.editMessageText('❌ Producto no encontrado.');
+    moveState.delete(chatId);
+    return;
+  }
+
+  console.log(`[Move] Product before update: id=${product.id}, zone_id=${product.zone_id}, zone="${product.zone}"`);
+
+  // Update product zone
+  const updated = await productsRepo.updateProduct(state.productId, { zone_id: zoneId });
+  console.log(`[Move] updateProduct result:`, updated ? `id=${updated.id}, zone_id=${updated.zone_id}, zone="${updated.zone}"` : 'undefined (product not found)');
+
+  if (!updated) {
+    await ctx.editMessageText('❌ Error al actualizar el producto.');
     moveState.delete(chatId);
     return;
   }
@@ -182,9 +207,6 @@ export async function executeMove(ctx: Context): Promise<void> {
   const oldZone = product.zone_id
     ? await zonesRepo.getZoneById(product.zone_id)
     : null;
-
-  // Update product zone
-  await productsRepo.updateProduct(state.productId, { zone_id: zoneId });
 
   // Log movement
   await movements.logMovement(

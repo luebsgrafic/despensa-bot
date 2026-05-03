@@ -5,6 +5,7 @@ const mockGetProductById = vi.fn();
 const mockSearchProducts = vi.fn();
 const mockLogMovement = vi.fn();
 const mockGetZonesByUser = vi.fn();
+const mockGetZoneById = vi.fn();
 
 vi.mock('../src/db', () => ({
   products: {
@@ -17,6 +18,7 @@ vi.mock('../src/db', () => ({
   },
   zones: {
     getZonesByUser: (...args: any[]) => mockGetZonesByUser(...args),
+    getZoneById: (...args: any[]) => mockGetZoneById(...args),
   },
 }));
 
@@ -104,18 +106,23 @@ async function handleMovePickZone(ctx: any) {
 async function executeMove(ctx: any) {
   const state = moveState.get(ctx.chat!.id);
   if (!state) return;
-  const destZone = 'despensa';
-  const product = state.product;
-  const updated = await mockUpdateProduct(state.productId, { zone: destZone });
+  const data = ctx.callbackQuery?.data || '';
+  const zoneId = parseInt(data.replace('move_confirm_', ''), 10);
+  if (isNaN(zoneId)) return;
+  const zone = await mockGetZoneById(zoneId);
+  if (!zone) return;
+  const product = await mockGetProductById(state.productId);
+  if (!product) return;
+  const updated = await mockUpdateProduct(state.productId, { zone_id: zoneId });
   await mockLogMovement(
     state.productId,
     'moved',
-    product?.zone || '',
-    destZone,
+    product.zone || '',
+    zone.name,
     ctx.from!.id,
   );
   await ctx.editMessageText(
-    `✅ *${product?.name || 'Producto'}* movido a *${destZone}*`,
+    `✅ *${product?.name || 'Producto'}* movido a *${zone.name}*`,
     { parse_mode: 'Markdown' },
   );
   moveState.delete(ctx.chat!.id);
@@ -143,6 +150,7 @@ function createCtx(overrides: Record<string, any> = {}): any {
 describe('Move Handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetZoneById.mockReset();
     moveState.clear();
   });
 
@@ -248,19 +256,34 @@ describe('Move Handler', () => {
     beforeEach(() => {
       moveState.set(12345, {
         productId: 1,
-        product: { id: 1, name: 'Leche', quantity: 2, unit: 'L', zone: 'nevera' },
+        productName: 'Leche',
+        currentZoneId: 1,
       });
     });
 
-    it('should call updateProduct with the new zone', async () => {
+    it('should call updateProduct with the new zone_id', async () => {
       const ctx = createCtx({
         chat: { id: 12345 },
         from: { id: 67890 },
-        callbackQuery: { data: 'move_confirm' },
+        callbackQuery: { data: 'move_confirm_5' },
+      });
+      mockGetProductById.mockResolvedValue({
+        id: 1,
+        name: 'Leche',
+        quantity: 2,
+        unit: 'L',
+        zone: 'nevera',
+        zone_id: 1,
+      });
+      mockGetZoneById.mockResolvedValue({
+        id: 5,
+        name: 'despensa',
+        emoji: '📦',
       });
       mockUpdateProduct.mockResolvedValue({
         id: 1,
         name: 'Leche',
+        zone_id: 5,
         zone: 'despensa',
       });
 
@@ -269,19 +292,30 @@ describe('Move Handler', () => {
       expect(mockUpdateProduct).toHaveBeenCalled();
       const updateArgs = mockUpdateProduct.mock.calls[0];
       expect(updateArgs[0]).toBe(1);
-      expect(updateArgs[1]?.zone).toBe('despensa');
+      expect(updateArgs[1]?.zone_id).toBe(5);
     });
 
     it('should call logMovement with action "moved"', async () => {
       const ctx = createCtx({
         chat: { id: 12345 },
         from: { id: 67890 },
-        callbackQuery: { data: 'move_confirm' },
+        callbackQuery: { data: 'move_confirm_5' },
       });
+      mockGetProductById.mockResolvedValue({
+        id: 1,
+        name: 'Leche',
+        quantity: 2,
+        unit: 'L',
+        zone: 'nevera',
+        zone_id: 1,
+      });
+      mockGetZoneById
+        .mockResolvedValueOnce({ id: 5, name: 'despensa', emoji: '📦' })  // first call: destination zone
+        .mockResolvedValueOnce({ id: 1, name: 'nevera', emoji: '🧊' });   // second call: old zone
       mockUpdateProduct.mockResolvedValue({
         id: 1,
         name: 'Leche',
-        zone: 'despensa',
+        zone_id: 5,
       });
 
       await executeMove(ctx);
@@ -290,8 +324,8 @@ describe('Move Handler', () => {
       const logArgs = mockLogMovement.mock.calls[0];
       expect(logArgs[0]).toBe(1);
       expect(logArgs[1]).toBe('moved');
-      expect(logArgs[2]).toBe('nevera');
-      expect(logArgs[3]).toBe('despensa');
+      expect(logArgs[2]).toContain('nevera');
+      expect(logArgs[3]).toContain('despensa');
       expect(logArgs[4]).toBe(67890);
     });
 
@@ -299,12 +333,23 @@ describe('Move Handler', () => {
       const ctx = createCtx({
         chat: { id: 12345 },
         from: { id: 67890 },
-        callbackQuery: { data: 'move_confirm' },
+        callbackQuery: { data: 'move_confirm_5' },
       });
+      mockGetProductById.mockResolvedValue({
+        id: 1,
+        name: 'Leche',
+        quantity: 2,
+        unit: 'L',
+        zone: 'nevera',
+        zone_id: 1,
+      });
+      mockGetZoneById
+        .mockResolvedValueOnce({ id: 5, name: 'despensa', emoji: '📦' })
+        .mockResolvedValueOnce({ id: 1, name: 'nevera', emoji: '🧊' });
       mockUpdateProduct.mockResolvedValue({
         id: 1,
         name: 'Leche',
-        zone: 'despensa',
+        zone_id: 5,
       });
 
       await executeMove(ctx);
