@@ -46,13 +46,39 @@ export async function initTestDb(): Promise<void> {
 
   await sql`CREATE TABLE IF NOT EXISTS zones (
     id SERIAL PRIMARY KEY,
-    user_id BIGINT,
+    user_id INTEGER,
     name TEXT NOT NULL,
     emoji TEXT NOT NULL DEFAULT '📦',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
 
-  // Ensure default zones exist
+  await sql`CREATE TABLE IF NOT EXISTS shopping_list (
+    id SERIAL PRIMARY KEY,
+    product_name TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 1,
+    unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
+    is_checked INTEGER NOT NULL DEFAULT 0,
+    added_by BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+
+  await sql`CREATE TABLE IF NOT EXISTS movement_log (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    action TEXT NOT NULL CHECK(action IN ('added', 'consumed', 'moved', 'restocked', 'depleted')),
+    previous_value TEXT,
+    new_value TEXT,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+
+  // Create unique index for system zones (needed for ON CONFLICT DO NOTHING)
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
+    ON zones(name) WHERE user_id IS NULL
+  `;
+
+  // Ensure default zones exist (idempotent via ON CONFLICT)
   await sql`
     INSERT INTO zones (user_id, name, emoji)
     VALUES
@@ -71,6 +97,9 @@ export async function initTestDb(): Promise<void> {
  */
 export async function cleanTestDb(): Promise<void> {
   const sql = getTestSql();
+  // Delete in order that respects FK constraints
+  await sql`DELETE FROM movement_log`;
+  await sql`DELETE FROM shopping_list`;
   await sql`DELETE FROM products`;
   await sql`DELETE FROM zones WHERE user_id IS NOT NULL`;
   // Don't delete default zones — they're needed for FK references

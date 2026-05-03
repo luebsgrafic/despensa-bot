@@ -6,7 +6,9 @@ let schemaInitialized = false;
 
 export function getSql(): NeonQueryFunction<false, false> {
   if (!sql) {
-    sql = neon(config.databaseUrl);
+    // Use DATABASE_URL from env (allows override for tests), fall back to config
+    const dbUrl = process.env['DATABASE_URL'] || config.databaseUrl;
+    sql = neon(dbUrl);
   }
   return sql;
 }
