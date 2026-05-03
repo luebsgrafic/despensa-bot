@@ -8,6 +8,7 @@ import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelec
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
 import { startMove, handleMovePickProduct, handleMovePickZone, executeMove, handleMoveCancel } from './handlers/move';
+import { showZones, handleNewZone, handleRenameZone, handleRenamePick, handleRenameInput, handleRenameCancel, handleDeleteZone, handleDeletePick, handleDeleteConfirm, handleDeleteCancel } from './handlers/zones';
 import { processWithAI, safeReply } from './services/gemini';
 import { handleVoiceMessage } from './handlers/voice';
 
@@ -29,6 +30,13 @@ export function createBot(): Telegraf<BotContext> {
     await showShoppingList(ctx);
   });
   bot.command('mover', startMove);
+  bot.command('zonas', showZones);
+  bot.command('nueva_zona', handleNewZone);
+  bot.command('nueva-zona', handleNewZone);
+  bot.command('renombrar_zona', handleRenameZone);
+  bot.command('renombrar-zona', handleRenameZone);
+  bot.command('borrar_zona', handleDeleteZone);
+  bot.command('borrar-zona', handleDeleteZone);
 
   // ── Keyboard handlers ──────────────────────────────────
   bot.hears('📦 Ver despensa', showPantry);
@@ -61,12 +69,12 @@ export function createBot(): Telegraf<BotContext> {
     const text = ctx.message.text;
     if (text && /^[\d.,\s]+$/.test(text.trim())) {
       const chatId = ctx.chat!.id;
-      // consumeState is internal to consume.ts, but we can check if the
-      // message looks like a number and route to handleConsumeAmount
-      // The handleConsumeAmount function checks consumeState internally
       await handleConsumeAmount(ctx);
       return;
     }
+
+    // Check if user is in zone rename wizard (waiting for new name)
+    await handleRenameInput(ctx);
 
     return next();
   });
@@ -127,6 +135,16 @@ export function createBot(): Telegraf<BotContext> {
         await executeMove(ctx);
       } else if (data === 'move_cancel') {
         await handleMoveCancel(ctx);
+      } else if (data.startsWith('zone_rename_pick_')) {
+        await handleRenamePick(ctx);
+      } else if (data === 'zone_rename_cancel') {
+        await handleRenameCancel(ctx);
+      } else if (data.startsWith('zone_delete_pick_')) {
+        await handleDeletePick(ctx);
+      } else if (data.startsWith('zone_delete_confirm_')) {
+        await handleDeleteConfirm(ctx);
+      } else if (data === 'zone_delete_cancel') {
+        await handleDeleteCancel(ctx);
       }
     } catch (error) {
       console.error('Error handling callback:', error);
