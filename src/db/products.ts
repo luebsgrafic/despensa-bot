@@ -110,6 +110,33 @@ export async function searchProducts(query: string): Promise<Product[]> {
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
   const sql = getSql();
+
+  // Upsert: check for existing product with same name (case insensitive) + zone_id
+  const existing = await sql`
+    SELECT * FROM products
+    WHERE LOWER(name) = LOWER(${input.name})
+      AND zone_id IS NOT DISTINCT FROM ${input.zone_id ?? null}
+    LIMIT 1
+  `;
+  const existingProduct = (existing as unknown as Product[])[0];
+
+  if (existingProduct) {
+    // Merge: add quantity to existing
+    const newQuantity = existingProduct.quantity + input.quantity;
+    const rows = await sql`
+      UPDATE products SET
+        quantity = ${newQuantity},
+        unit = ${input.unit},
+        is_depleted = ${newQuantity <= 0 ? 1 : 0},
+        updated_at = NOW()
+      WHERE id = ${existingProduct.id}
+      RETURNING *
+    `;
+    const product = (rows as unknown as any[])[0];
+    return normalizeProduct(product);
+  }
+
+  // No existing product — INSERT
   const rows = await sql`
     INSERT INTO products (name, quantity, unit, zone, zone_id, min_stock, expiration_date, is_depleted)
     VALUES (

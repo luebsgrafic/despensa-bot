@@ -60,19 +60,40 @@ describeIntegration('Full E2E: Weekly simulation', () => {
       expect(rows[0].expiration_date, 'expiration_date should be null').toBeNull();
     });
 
-    it('should update stock when adding a duplicate product', async () => {
+    it('should upsert when adding a duplicate product (same name + zone)', async () => {
       const neveraId = await getDefaultZoneId('nevera');
-      const p1 = await products.createProduct({
-        name: 'Leche', quantity: 2, unit: 'L', zone: 'nevera', zone_id: neveraId,
+      await products.createProduct({
+        name: 'Galletas', quantity: 2, unit: 'ud', zone: 'nevera', zone_id: neveraId,
       });
 
-      // Simulate "add duplicate" by updating existing
-      const updated = await products.updateProduct(p1.id, { quantity: p1.quantity + 3 });
+      // Second add with same name + zone → upsert: sum quantities
+      const p2 = await products.createProduct({
+        name: 'Galletas', quantity: 3, unit: 'ud', zone: 'nevera', zone_id: neveraId,
+      });
+
+      // Verify only 1 product exists with summed quantity
+      const sql = getTestSql();
+      const all = await sql`SELECT * FROM products`;
+      expect(all.length, 'Should have 1 product after upsert').toBe(1);
+      expect(all[0].quantity, 'Quantity should be 5 (2+3)').toBe(5);
+      expect(all[0].id, 'Should keep the original row').toBe(p2.id);
+    });
+
+    it('should create separate products for different zones', async () => {
+      const neveraId = await getDefaultZoneId('nevera');
+      const despensaId = await getDefaultZoneId('despensa');
+      await products.createProduct({
+        name: 'Arroz', quantity: 1, unit: 'kg', zone: 'nevera', zone_id: neveraId,
+      });
+
+      // Same name, different zone → should create new product
+      const p2 = await products.createProduct({
+        name: 'Arroz', quantity: 2, unit: 'kg', zone: 'despensa', zone_id: despensaId,
+      });
 
       const sql = getTestSql();
-      const rows = await sql`SELECT * FROM products WHERE id = ${p1.id}`;
-      expect(rows.length, 'Should still be 1 product').toBe(1);
-      expect(rows[0].quantity, 'Quantity should be 5 (2+3)').toBe(5);
+      const all = await sql`SELECT * FROM products`;
+      expect(all.length, 'Should have 2 products (different zones)').toBe(2);
     });
 
     it('should consume exact amount and update stock', async () => {

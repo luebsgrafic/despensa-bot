@@ -130,6 +130,30 @@ export async function initializeSchema(): Promise<void> {
     WHERE p.zone_id IS NULL AND p.zone IS NOT NULL
   `;
 
+  // ── Merge duplicate products by name + zone_id ─────────
+  // Sum quantities, keep the most recent row, delete the rest.
+  // Idempotent — safe to run multiple times.
+  await sql`
+    UPDATE products p
+    SET quantity = (
+      SELECT SUM(p2.quantity) FROM products p2
+      WHERE LOWER(p2.name) = LOWER(p.name)
+        AND p2.zone_id IS NOT DISTINCT FROM p.zone_id
+    )
+    WHERE p.id IN (
+      SELECT MAX(p3.id) FROM products p3
+      GROUP BY LOWER(p3.name), p3.zone_id
+      HAVING COUNT(*) > 1
+    )
+  `;
+  await sql`
+    DELETE FROM products p
+    WHERE p.id NOT IN (
+      SELECT MAX(p4.id) FROM products p4
+      GROUP BY LOWER(p4.name), p4.zone_id
+    )
+  `;
+
   // ── Indexes ────────────────────────────────────────────
   await sql`
     CREATE INDEX IF NOT EXISTS idx_products_zone ON products(zone)

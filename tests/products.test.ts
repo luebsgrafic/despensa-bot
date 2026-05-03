@@ -31,6 +31,17 @@ vi.mock('../src/db/schema', () => {
   const mockSql = (_strings: TemplateStringsArray, ...values: any[]) => {
     const query = reconstructQuery(_strings, values);
 
+    // Upsert: SELECT for existing product by name + zone_id
+    if (query.includes('LOWER(name) = LOWER(') && query.includes('zone_id IS NOT DISTINCT FROM')) {
+      const searchName = String(values[0]).toLowerCase();
+      const searchZoneId = values[1];
+      const found = state.products.find((p: any) =>
+        p.name.toLowerCase() === searchName &&
+        (p.zone_id === searchZoneId || (p.zone_id === null && searchZoneId === null))
+      );
+      return found ? [found] : [];
+    }
+
     if (query.includes('INSERT INTO products')) {
       const product = {
         id: state.nextId++,
