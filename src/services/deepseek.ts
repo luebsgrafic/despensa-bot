@@ -88,7 +88,7 @@ Responde en español, tono amigable, máximo 200 tokens.`;
       { role: 'user', content: userMessage },
     ],
     max_tokens: config.deepseekMaxTokens,
-    temperature: 0.7,
+    temperature: 0.3,
   });
 
   const rawContent = completion.choices[0]?.message?.content;
