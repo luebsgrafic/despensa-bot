@@ -121,13 +121,13 @@ vi.mock('../src/db/schema', () => {
       return product ? [product] : [];
     }
 
-    if (query.includes('DELETE FROM products WHERE id =')) {
+    if (query.includes('DELETE FROM products')) {
       const idx = state.products.findIndex((p: any) => p.id === values[0]);
       if (idx !== -1) {
         state.products.splice(idx, 1);
-        return { count: 1 };
+        return [{ id: values[0] }];
       }
-      return { count: 0 };
+      return [];
     }
 
     if (query.includes('expiration_date') && !query.includes('p.expiration_date')) {

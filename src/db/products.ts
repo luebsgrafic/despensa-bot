@@ -170,8 +170,8 @@ export async function updateProduct(
 
 export async function deleteProduct(id: number): Promise<boolean> {
   const sql = getSql();
-  const result = await sql`DELETE FROM products WHERE id = ${id}`;
-  return (result as any).count > 0;
+  const result = await sql`DELETE FROM products WHERE id = ${id} RETURNING id`;
+  return (result as any[]).length > 0;
 }
 
 export async function getExpiringProducts(days: number): Promise<Product[]> {

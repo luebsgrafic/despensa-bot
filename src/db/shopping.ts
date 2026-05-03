@@ -52,12 +52,12 @@ export async function toggleShoppingItem(
 
 export async function removeShoppingItem(id: number): Promise<boolean> {
   const sql = getSql();
-  const result = await sql`DELETE FROM shopping_list WHERE id = ${id}`;
-  return (result as any).count > 0;
+  const result = await sql`DELETE FROM shopping_list WHERE id = ${id} RETURNING id`;
+  return (result as any[]).length > 0;
 }
 
 export async function clearCheckedItems(): Promise<number> {
   const sql = getSql();
-  const result = await sql`DELETE FROM shopping_list WHERE is_checked = 1`;
-  return (result as any).count ?? 0;
+  const result = await sql`DELETE FROM shopping_list WHERE is_checked = 1 RETURNING id`;
+  return (result as any[]).length;
 }

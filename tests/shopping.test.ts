@@ -54,9 +54,9 @@ vi.mock('../src/db/schema', () => {
       const idx = state.items.findIndex((i: any) => i.id === values[0]);
       if (idx !== -1) {
         state.items.splice(idx, 1);
-        return { count: 1 };
+        return [{ id: values[0] }];
       }
-      return { count: 0 };
+      return [];
     }
 
     if (query.includes("DELETE FROM shopping_list WHERE is_checked = 1")) {
@@ -64,7 +64,7 @@ vi.mock('../src/db/schema', () => {
       for (let i = state.items.length - 1; i >= 0; i--) {
         if (state.items[i].is_checked) state.items.splice(i, 1);
       }
-      return { count };
+      return Array(count).fill({ id: 0 });
     }
 
     return [];

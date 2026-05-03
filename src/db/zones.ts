@@ -115,8 +115,8 @@ export async function deleteZone(
     throw new Error('ZONE_NOT_EMPTY');
   }
 
-  const result = await sql`DELETE FROM zones WHERE id = ${zoneId}`;
-  return (result as any).count > 0;
+  const result = await sql`DELETE FROM zones WHERE id = ${zoneId} RETURNING id`;
+  return (result as any[]).length > 0;
 }
 
 export async function getDefaultZones(): Promise<Zone[]> {

@@ -30,21 +30,14 @@ export function getTestSql(): NeonQueryFunction<false, false> {
 export async function initTestDb(): Promise<void> {
   const sql = getTestSql();
 
-  await sql`CREATE TABLE IF NOT EXISTS products (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    quantity REAL NOT NULL DEFAULT 0,
-    unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
-    zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
-    zone_id INTEGER,
-    min_stock REAL,
-    expiration_date DATE,
-    is_depleted INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`;
+  // Drop all tables to ensure clean schema (idempotent — only runs once per test suite)
+  await sql`DROP TABLE IF EXISTS movement_log CASCADE`;
+  await sql`DROP TABLE IF EXISTS shopping_list CASCADE`;
+  await sql`DROP TABLE IF EXISTS products CASCADE`;
+  await sql`DROP TABLE IF EXISTS zones CASCADE`;
 
-  await sql`CREATE TABLE IF NOT EXISTS zones (
+  // Recreate zones with INTEGER user_id (not BIGINT, which returns string from Neon)
+  await sql`CREATE TABLE zones (
     id SERIAL PRIMARY KEY,
     user_id INTEGER,
     name TEXT NOT NULL,
@@ -52,7 +45,38 @@ export async function initTestDb(): Promise<void> {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
 
-  await sql`CREATE TABLE IF NOT EXISTS shopping_list (
+  // Create unique index for system zones (needed for ON CONFLICT DO NOTHING)
+  await sql`
+    CREATE UNIQUE INDEX idx_zones_name_system
+    ON zones(name) WHERE user_id IS NULL
+  `;
+
+  // Insert default zones
+  await sql`
+    INSERT INTO zones (user_id, name, emoji)
+    VALUES
+      (NULL, 'nevera', '🧊'),
+      (NULL, 'congelador', '❄️'),
+      (NULL, 'armario_cocina', '🚪'),
+      (NULL, 'despensa', '📦'),
+      (NULL, 'otros', '📌')
+  `;
+
+  await sql`CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 0,
+    unit TEXT NOT NULL DEFAULT 'ud' CHECK(unit IN ('ud', 'kg', 'L', 'g', 'ml')),
+    zone TEXT NOT NULL CHECK(zone IN ('nevera', 'congelador', 'armario_cocina', 'despensa', 'otros')),
+    zone_id INTEGER REFERENCES zones(id),
+    min_stock REAL,
+    expiration_date DATE,
+    is_depleted INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+
+  await sql`CREATE TABLE shopping_list (
     id SERIAL PRIMARY KEY,
     product_name TEXT NOT NULL,
     quantity REAL NOT NULL DEFAULT 1,
@@ -62,7 +86,7 @@ export async function initTestDb(): Promise<void> {
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
 
-  await sql`CREATE TABLE IF NOT EXISTS movement_log (
+  await sql`CREATE TABLE movement_log (
     id SERIAL PRIMARY KEY,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     action TEXT NOT NULL CHECK(action IN ('added', 'consumed', 'moved', 'restocked', 'depleted')),
@@ -71,24 +95,6 @@ export async function initTestDb(): Promise<void> {
     user_id BIGINT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`;
-
-  // Create unique index for system zones (needed for ON CONFLICT DO NOTHING)
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_zones_name_system
-    ON zones(name) WHERE user_id IS NULL
-  `;
-
-  // Ensure default zones exist (idempotent via ON CONFLICT)
-  await sql`
-    INSERT INTO zones (user_id, name, emoji)
-    VALUES
-      (NULL, 'nevera', '🧊'),
-      (NULL, 'congelador', '❄️'),
-      (NULL, 'armario_cocina', '🚪'),
-      (NULL, 'despensa', '📦'),
-      (NULL, 'otros', '📌')
-    ON CONFLICT DO NOTHING
-  `;
 }
 
 /**
