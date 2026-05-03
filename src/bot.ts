@@ -2,8 +2,8 @@ import { Telegraf, Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { config } from './utils/config';
 import { authMiddleware, sessionMiddleware } from './middleware';
-import { startHandler } from './handlers/start';
-import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handlePantryClose } from './handlers/pantry';
+import { startHandler, showMainMenu, MAIN_MENU_KEYBOARD } from './handlers/start';
+import { showPantry, handlePantryZone, handlePantryPage, handlePantryBack, handlePantryClose, handlePantryMove } from './handlers/pantry';
 import { startAddWizard, handleWizardInput, handleZoneSelection, handleUnitSelection, handleNoExpiry, handleNoMinStock, handleSave, handleCancel } from './handlers/add';
 import { startConsume, handleConsumePick, handleConsumeAmount, handleForceConsume, handleAddToShopping, handleConsumeDone, handleConsumeCancel } from './handlers/consume';
 import { showShoppingList, handleToggleItem, handleShoppingPage, handleShareList, handleClearChecked, handleShoppingClose } from './handlers/shopping';
@@ -84,6 +84,8 @@ export function createBot(): Telegraf<BotContext> {
         await handlePantryBack(ctx);
       } else if (data === 'pantry_close') {
         await handlePantryClose(ctx);
+      } else if (data.startsWith('pantry_move_')) {
+        await handlePantryMove(ctx);
       } else if (data.startsWith('wizard_zone_')) {
         await handleZoneSelection(ctx);
       } else if (data.startsWith('wizard_unit_')) {
@@ -141,10 +143,12 @@ export function createBot(): Telegraf<BotContext> {
     try {
       await ctx.sendChatAction('typing');
       const response = await processWithAI(text, ctx.from!.id);
-      await safeReply(ctx, response);
+      await safeReply(ctx, response, { reply_markup: MAIN_MENU_KEYBOARD });
     } catch (error) {
       console.error('DeepSeek error:', error);
-      await safeReply(ctx, '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.');
+      await safeReply(ctx, '🤖 Lo siento, no pude procesar eso ahora. Intenta de nuevo en un momento.', {
+        reply_markup: MAIN_MENU_KEYBOARD,
+      });
     }
   });
 

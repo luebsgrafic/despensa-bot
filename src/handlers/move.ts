@@ -66,6 +66,19 @@ export async function handleMovePickProduct(ctx: Context): Promise<void> {
   await showZonePicker(ctx, product.id, product.name, product.zone_id);
 }
 
+/**
+ * Start move flow for a specific product (bypasses product search).
+ * Used by pantry.ts when user clicks "Mover" button on a product.
+ */
+export async function startMoveForProduct(
+  ctx: Context,
+  productId: number,
+  productName: string,
+  currentZoneId: number | null,
+): Promise<void> {
+  await showZonePicker(ctx, productId, productName, currentZoneId);
+}
+
 async function showZonePicker(
   ctx: Context,
   productId: number,

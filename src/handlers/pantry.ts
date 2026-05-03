@@ -1,6 +1,7 @@
 import { Context, Markup } from 'telegraf';
 import { products as productsRepo, zones as zonesRepo } from '../db';
-import { Zone } from '../types';
+import { Zone, Product } from '../types';
+import { startMoveForProduct } from './move';
 
 const ITEMS_PER_PAGE = 8;
 
@@ -112,6 +113,14 @@ async function showZonePage(ctx: Context, zone: Zone, page: number): Promise<voi
 
   text += `\n\n_Página ${currentPage + 1} de ${totalPages}_`;
 
+  // Build move buttons for each product on this page
+  const moveButtons = pageItems.map((p: Product) => [
+    Markup.button.callback(
+      `📦 Mover: ${p.name}`,
+      `pantry_move_${p.id}`,
+    ),
+  ]);
+
   const navButtons: ReturnType<typeof Markup.button.callback>[] = [];
   if (currentPage > 0) {
     navButtons.push(Markup.button.callback('⬅️ Anterior', 'pantry_prev'));
@@ -126,6 +135,7 @@ async function showZonePage(ctx: Context, zone: Zone, page: number): Promise<voi
   ];
 
   const keyboard = Markup.inlineKeyboard([
+    ...moveButtons,
     ...(navButtons.length > 0 ? [navButtons] : []),
     actionButtons,
   ]);
@@ -156,6 +166,25 @@ export async function handlePantryBack(ctx: Context): Promise<void> {
 export async function handlePantryClose(ctx: Context): Promise<void> {
   await ctx.deleteMessage().catch(() => {});
   pantryState.delete(ctx.chat!.id);
+}
+
+/**
+ * Called when user clicks "📦 Mover: Producto" button in pantry view.
+ * Starts the move flow for the selected product directly.
+ */
+export async function handlePantryMove(ctx: Context): Promise<void> {
+  if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
+  const productId = parseInt(
+    ctx.callbackQuery.data.replace('pantry_move_', ''),
+    10,
+  );
+  const product = await productsRepo.getProductById(productId);
+  if (!product) {
+    await ctx.editMessageText('❌ Producto no encontrado.');
+    return;
+  }
+
+  await startMoveForProduct(ctx, product.id, product.name, product.zone_id);
 }
 
 function capitalize(str: string): string {

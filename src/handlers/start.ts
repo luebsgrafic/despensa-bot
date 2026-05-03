@@ -1,5 +1,27 @@
 import { Context, Markup } from 'telegraf';
-import { config } from '../utils/config';
+
+export const MAIN_MENU_KEYBOARD = {
+  keyboard: [
+    [{ text: '📦 Ver despensa' }, { text: '➕ Añadir' }],
+    [{ text: '🛒 Lista compra' }, { text: '🍳 ¿Qué como?' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
+/**
+ * Sends the main menu keyboard to the user without any extra message.
+ * Use this to ensure the persistent keyboard is always visible.
+ */
+export async function showMainMenu(ctx: Context): Promise<void> {
+  try {
+    await ctx.reply('📋 Menú principal:', {
+      reply_markup: MAIN_MENU_KEYBOARD,
+    });
+  } catch {
+    // Silently fail — keyboard is a best-effort UX improvement
+  }
+}
 
 export function startHandler(ctx: Context): void {
   const userName = ctx.from?.first_name || 'Usuario';
@@ -15,13 +37,6 @@ export function startHandler(ctx: Context): void {
     `Usa los botones de abajo para empezar 👇`;
 
   ctx.reply(welcomeMessage, {
-    reply_markup: {
-      keyboard: [
-        [{ text: '📦 Ver despensa' }, { text: '➕ Añadir' }],
-        [{ text: '🛒 Lista compra' }, { text: '🍳 ¿Qué como?' }],
-      ],
-      resize_keyboard: true,
-      is_persistent: true,
-    },
+    reply_markup: MAIN_MENU_KEYBOARD,
   });
 }

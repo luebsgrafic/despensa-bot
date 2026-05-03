@@ -19,7 +19,7 @@ const MAX_REPLY_LENGTH = 4096;
  * - Truncates if over 4096 chars
  * - Does NOT use Markdown (safe for dynamic content)
  */
-export function safeReply(ctx: any, text: unknown): Promise<any> {
+export function safeReply(ctx: any, text: unknown, extra?: Record<string, any>): Promise<any> {
   let safeText = String(text ?? '').trim();
 
   if (!safeText) {
@@ -32,7 +32,7 @@ export function safeReply(ctx: any, text: unknown): Promise<any> {
     safeText = safeText.slice(0, MAX_REPLY_LENGTH - 3) + '...';
   }
 
-  return ctx.reply(safeText);
+  return ctx.reply(safeText, extra);
 }
 
 interface AIAction {
