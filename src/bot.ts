@@ -119,7 +119,7 @@ export function createBot(): Telegraf<BotContext> {
     try {
       await ctx.sendChatAction('typing');
       const response = await processWithAI(text, ctx.from!.id);
-      await ctx.reply(response, { parse_mode: 'Markdown' });
+      await ctx.reply(response);
     } catch (error) {
       console.error('DeepSeek error:', error);
       await ctx.reply(

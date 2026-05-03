@@ -6,6 +6,8 @@ let sql: NeonQueryFunction<false, false>;
 export function getSql(): NeonQueryFunction<false, false> {
   if (!sql) {
     sql = neon(config.databaseUrl);
+    // Initialize schema — each statement must be a separate call
+    // because Neon does not support multiple commands in a prepared statement
     initializeSchema();
   }
   return sql;
@@ -24,8 +26,10 @@ async function initializeSchema(): Promise<void> {
       is_depleted INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
+  `;
 
+  await sql`
     CREATE TABLE IF NOT EXISTS shopping_list (
       id SERIAL PRIMARY KEY,
       product_name TEXT NOT NULL,
@@ -34,8 +38,10 @@ async function initializeSchema(): Promise<void> {
       is_checked INTEGER NOT NULL DEFAULT 0,
       added_by BIGINT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
+  `;
 
+  await sql`
     CREATE TABLE IF NOT EXISTS movement_log (
       id SERIAL PRIMARY KEY,
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -44,11 +50,22 @@ async function initializeSchema(): Promise<void> {
       new_value TEXT,
       user_id BIGINT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
+  `;
 
-    CREATE INDEX IF NOT EXISTS idx_products_zone ON products(zone);
-    CREATE INDEX IF NOT EXISTS idx_products_expiration ON products(expiration_date);
-    CREATE INDEX IF NOT EXISTS idx_shopping_list_checked ON shopping_list(is_checked);
-    CREATE INDEX IF NOT EXISTS idx_movement_log_product ON movement_log(product_id);
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_products_zone ON products(zone)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_products_expiration ON products(expiration_date)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_shopping_list_checked ON shopping_list(is_checked)
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_movement_log_product ON movement_log(product_id)
   `;
 }
