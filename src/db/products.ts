@@ -1,5 +1,6 @@
 import { getSql } from './schema';
 import { Product, StorageZone, ProductUnit } from '../types';
+import { logMovement } from './movements';
 
 export interface CreateProductInput {
   name: string;
@@ -141,10 +142,19 @@ export async function updateProduct(
 
   // If zone_id is being updated, also sync the legacy zone column
   let zoneValue = input.zone ?? existing.zone;
-  if (input.zone_id !== undefined && input.zone_id !== existing.zone_id) {
+  let oldZoneName: string | null = null;
+  let newZoneName: string | null = null;
+  const zoneChanged = input.zone_id !== undefined && input.zone_id !== existing.zone_id;
+
+  if (zoneChanged) {
     const zoneName = await getZoneNameById(input.zone_id);
     if (zoneName) {
       zoneValue = zoneName as StorageZone;
+      newZoneName = zoneName;
+    }
+    if (existing.zone_id) {
+      const oldZone = await getZoneNameById(existing.zone_id);
+      oldZoneName = oldZone;
     }
   }
 
@@ -164,6 +174,18 @@ export async function updateProduct(
   `;
   const product = (rows as unknown as any[])[0];
   if (!product) return undefined;
+
+  // Log movement when zone changes
+  if (zoneChanged && newZoneName) {
+    await logMovement(
+      id,
+      'moved',
+      oldZoneName || 'desconocida',
+      newZoneName,
+      0,
+    );
+  }
+
   const enriched = await enrichWithZone(product);
   return normalizeProduct(enriched);
 }

@@ -20,15 +20,8 @@ describe('Move product integration test', () => {
   it('should move a product from nevera to congelador and persist in DB', async () => {
     if (!process.env['DATABASE_URL_TEST']) return;
 
-    const sql = getTestSql();
-
-    // Debug: check zones exist
-    const allZones = await sql`SELECT id, name, user_id FROM zones ORDER BY id`;
-    console.log('[DEBUG move.test] zones:', JSON.stringify(allZones));
-
     const neveraId = await getDefaultZoneId('nevera');
     const congeladorId = await getDefaultZoneId('congelador');
-    console.log('[DEBUG move.test] neveraId:', neveraId, 'congeladorId:', congeladorId);
 
     // Create a product in nevera
     const product = await products.createProduct({
@@ -39,19 +32,11 @@ describe('Move product integration test', () => {
       zone_id: neveraId,
     });
 
-    console.log('[DEBUG move.test] created product:', JSON.stringify(product));
-
     expect(product.zone).toBe('nevera');
     expect(product.zone_id).toBe(neveraId);
 
-    // Debug: verify product exists in DB
-    const dbCheck = await sql`SELECT id, name, zone_id FROM products WHERE id = ${product.id}`;
-    console.log('[DEBUG move.test] product in DB after create:', JSON.stringify(dbCheck));
-
     // Move to congelador
     const updated = await products.updateProduct(product.id, { zone_id: congeladorId });
-
-    console.log('[DEBUG move.test] updateProduct result:', JSON.stringify(updated));
 
     // Verify the update returned correctly
     expect(updated).toBeDefined();
@@ -59,6 +44,7 @@ describe('Move product integration test', () => {
     expect(updated!.zone).toBe('congelador'); // legacy column synced!
 
     // Verify directly in DB
+    const sql = getTestSql();
     const rows = await sql`
       SELECT p.*, z.name as zone_name, z.emoji as zone_emoji
       FROM products p
@@ -66,8 +52,6 @@ describe('Move product integration test', () => {
       WHERE p.id = ${product.id}
     `;
     const dbProduct = (rows as any[])[0];
-
-    console.log('[DEBUG move.test] product after move:', JSON.stringify(dbProduct));
 
     expect(dbProduct.zone_id).toBe(congeladorId);
     expect(dbProduct.zone).toBe('congelador'); // legacy column

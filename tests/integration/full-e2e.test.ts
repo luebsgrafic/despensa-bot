@@ -484,14 +484,10 @@ describeIntegration('Full E2E: Weekly simulation', () => {
       await products.updateProduct(p.id, { quantity: 1 });
       await movements.logMovement(p.id, 'consumed', '2 kg', '1 kg', USER_A);
 
-      // Move
+      // Move — updateProduct logs 'moved' internally when zone_id changes
       await products.updateProduct(p.id, { zone_id: congeladorId });
-      await movements.logMovement(p.id, 'moved', 'nevera', 'congelador', USER_A);
 
       const logs = await movements.getMovementsByProduct(p.id);
-      console.log('[DEBUG movement log] logs:', JSON.stringify(logs));
-      const allLogs = await getTestSql()`SELECT * FROM movement_log ORDER BY id`;
-      console.log('[DEBUG movement log] all logs in DB:', JSON.stringify(allLogs));
       expect(logs.length, 'Should have 3 log entries').toBe(3);
 
       const actions = logs.map((l) => l.action);
