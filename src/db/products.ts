@@ -22,12 +22,24 @@ export interface UpdateProductInput {
   name?: string;
 }
 
-// Base SELECT that JOINs with zones to get zone_name and zone_emoji
-const PRODUCT_SELECT = `
-  SELECT p.*, z.name as zone_name, z.emoji as zone_emoji
-  FROM products p
-  LEFT JOIN zones z ON p.zone_id = z.id
-`;
+/**
+ * Build a SELECT query with LEFT JOIN zones to get zone_name and zone_emoji.
+ * Neon tagged templates don't support ${} for SQL fragments (only for values),
+ * so we build the query string and use sql.unsafe() for the dynamic part.
+ */
+function selectWithJoin(whereClause: string, orderClause: string, values: any[]): any {
+  const sql = getSql();
+  const query = `
+    SELECT p.*, z.name as zone_name, z.emoji as zone_emoji
+    FROM products p
+    LEFT JOIN zones z ON p.zone_id = z.id
+    ${whereClause}
+    ${orderClause}
+  `;
+  // Use tagged template with the query as the first string and values as params
+  // This is safe because the WHERE/ORDER clauses are controlled strings, not user input
+  return sql.unsafe(query, values);
+}
 
 async function getZoneNameById(zoneId: number | null | undefined): Promise<string | null> {
   if (!zoneId) return null;
@@ -38,38 +50,24 @@ async function getZoneNameById(zoneId: number | null | undefined): Promise<strin
 }
 
 export async function getAllProducts(): Promise<Product[]> {
-  const sql = getSql();
-  return sql`
-    ${PRODUCT_SELECT}
-    ORDER BY COALESCE(z.name, p.zone), p.name
-  ` as unknown as Product[];
+  return selectWithJoin('', 'ORDER BY COALESCE(z.name, p.zone), p.name', []) as unknown as Product[];
 }
 
 export async function getProductsByZone(zone: StorageZone): Promise<Product[]> {
-  const sql = getSql();
-  return sql`
-    ${PRODUCT_SELECT}
-    WHERE p.zone = ${zone}
-    ORDER BY p.name
-  ` as unknown as Product[];
+  return selectWithJoin('WHERE p.zone = $1', 'ORDER BY p.name', [zone]) as unknown as Product[];
 }
 
 export async function getProductById(id: number): Promise<Product | undefined> {
-  const sql = getSql();
-  const rows = await sql`
-    ${PRODUCT_SELECT}
-    WHERE p.id = ${id}
-  `;
+  const rows = await selectWithJoin('WHERE p.id = $1', '', [id]);
   return (rows as unknown as Product[])[0];
 }
 
 export async function searchProducts(query: string): Promise<Product[]> {
-  const sql = getSql();
-  return sql`
-    ${PRODUCT_SELECT}
-    WHERE p.name ILIKE ${'%' + query + '%'}
-    ORDER BY COALESCE(z.name, p.zone), p.name
-  ` as unknown as Product[];
+  return selectWithJoin(
+    'WHERE p.name ILIKE $1',
+    'ORDER BY COALESCE(z.name, p.zone), p.name',
+    [`%${query}%`],
+  ) as unknown as Product[];
 }
 
 export async function createProduct(input: CreateProductInput): Promise<Product> {
@@ -136,37 +134,29 @@ export async function deleteProduct(id: number): Promise<boolean> {
 }
 
 export async function getExpiringProducts(days: number): Promise<Product[]> {
-  const sql = getSql();
   const threshold = new Date();
   threshold.setDate(threshold.getDate() + days);
   const thresholdStr = threshold.toISOString().split('T')[0];
 
-  return sql`
-    ${PRODUCT_SELECT}
-    WHERE p.expiration_date IS NOT NULL
-      AND p.expiration_date <= ${thresholdStr}::date
-      AND p.expiration_date >= CURRENT_DATE
-      AND p.is_depleted = 0
-    ORDER BY p.expiration_date
-  ` as unknown as Product[];
+  return selectWithJoin(
+    'WHERE p.expiration_date IS NOT NULL AND p.expiration_date <= $1::date AND p.expiration_date >= CURRENT_DATE AND p.is_depleted = 0',
+    'ORDER BY p.expiration_date',
+    [thresholdStr],
+  ) as unknown as Product[];
 }
 
 export async function getLowStockProducts(): Promise<Product[]> {
-  const sql = getSql();
-  return sql`
-    ${PRODUCT_SELECT}
-    WHERE p.min_stock IS NOT NULL
-      AND p.quantity <= p.min_stock
-      AND p.is_depleted = 0
-    ORDER BY COALESCE(z.name, p.zone), p.name
-  ` as unknown as Product[];
+  return selectWithJoin(
+    'WHERE p.min_stock IS NOT NULL AND p.quantity <= p.min_stock AND p.is_depleted = 0',
+    'ORDER BY COALESCE(z.name, p.zone), p.name',
+    [],
+  ) as unknown as Product[];
 }
 
 export async function getDepletedProducts(): Promise<Product[]> {
-  const sql = getSql();
-  return sql`
-    ${PRODUCT_SELECT}
-    WHERE p.is_depleted = 1
-    ORDER BY COALESCE(z.name, p.zone), p.name
-  ` as unknown as Product[];
+  return selectWithJoin(
+    'WHERE p.is_depleted = 1',
+    'ORDER BY COALESCE(z.name, p.zone), p.name',
+    [],
+  ) as unknown as Product[];
 }

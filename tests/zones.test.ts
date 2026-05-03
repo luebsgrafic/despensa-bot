@@ -146,7 +146,13 @@ vi.mock('../src/db/schema', () => {
     return [];
   };
 
-  return { getSql: () => mockSql };
+  return {
+    getSql: () => {
+      const sqlFn = (strings: TemplateStringsArray, ...vals: any[]) => mockSql(strings, ...vals);
+      sqlFn.unsafe = (query: string, values: any[]) => mockSql([query] as any, ...values);
+      return sqlFn;
+    },
+  };
 });
 
 /**

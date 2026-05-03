@@ -17,10 +17,10 @@ export async function createZone(
 ): Promise<Zone> {
   const sql = getSql();
 
-  // Check for duplicate name for this user or system
+  // Check for duplicate name — only for the same user or system zones
   const existing = await sql`
     SELECT id FROM zones
-    WHERE (user_id IS NULL OR user_id = ${userId})
+    WHERE user_id = ${userId}
       AND LOWER(name) = LOWER(${name})
   `;
 

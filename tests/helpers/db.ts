@@ -9,6 +9,7 @@ let testSql: NeonQueryFunction<false, false> | null = null;
  * clean up in afterAll.
  */
 export function getTestSql(): NeonQueryFunction<false, false> {
+  // Only use DATABASE_URL_TEST — never fall back to production DATABASE_URL
   const url = process.env['DATABASE_URL_TEST'];
   if (!url) {
     throw new Error(
@@ -76,10 +77,19 @@ export async function cleanTestDb(): Promise<void> {
 }
 
 /**
+ * Check if DATABASE_URL_TEST is configured.
+ */
+export function hasTestDb(): boolean {
+  return !!process.env['DATABASE_URL_TEST'];
+}
+
+/**
  * Get the ID of a default zone by name.
+ * Returns 0 if test DB is not configured (caller should skip).
  */
 export async function getDefaultZoneId(name: string): Promise<number> {
+  if (!hasTestDb()) return 0;
   const sql = getTestSql();
   const rows = await sql`SELECT id FROM zones WHERE name = ${name} AND user_id IS NULL`;
-  return (rows as any[])[0]?.id;
+  return (rows as any[])[0]?.id ?? 0;
 }
